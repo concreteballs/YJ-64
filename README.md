@@ -24,3 +24,5 @@ python main.py
 ```
 
 Malformed packets are rejected at the ingestion boundary and do not terminate a validation cycle. Configuration is externalized and validated before the engine starts.
+
+<!-- CI runner probe: force a push-triggered verification without changing runtime code. -->
