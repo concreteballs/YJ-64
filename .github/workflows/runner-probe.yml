@@ -1,0 +1,22 @@
+name: Runner probe
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-probe:
+    name: Runner probe
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Runner allocated
+        run: echo "GitHub Actions runner started"
+      - name: Python available
+        run: python --version
+      - name: Shell available
+        run: printf 'runner-ok\n'
