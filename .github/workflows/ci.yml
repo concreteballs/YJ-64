@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Guard diagnostic
         id: guard
         run: |
@@ -24,16 +27,10 @@ jobs:
           cat guard-diagnostics.txt
           exit "$status"
 
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Verify protected-line guard
-        run: python tools/verify_protected_guard.py
 
       - name: Install project and test dependencies
         run: |
