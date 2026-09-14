@@ -41,8 +41,21 @@ result = adapter.observe(
 )
 ```
 
+## Offline OASIS smoke runner
+
+`examples/oasis_smoke.py` runs an actual OASIS environment with two deterministic agents using `ManualAction`. After the simulation closes, it reads OASIS's `trace` table, converts the recorded actions into YJ-64 observations, and runs the diagnostic engine.
+
+Run it with the optional dependency installed:
+
+```bash
+pip install -e '.[oasis]'
+python examples/oasis_smoke.py
+```
+
+The smoke runner uses explicit fixed metric observations for the two agents. Those values are test instrumentation, not metrics inferred from `create_post`. A later instrumentation layer can replace them with measured simulation data without changing the adapter boundary.
+
 ## OASIS execution model
 
-The current OASIS examples create a `Platform`, generate an `AgentGraph`, and repeatedly call `perform_action_by_llm()` for active agents. That gives us a clean future hook: normalize each completed action into an `OasisActionEvent`, then pass it to YJ-64 without changing the protected YJ-64 core modules.
+OASIS's current API creates an `AgentGraph`, constructs an environment with `oasis.make(...)`, calls `env.reset()`, and advances the simulation with `env.step(...)`. Manual actions can be used without an LLM, while `LLMAction` can be used when a model-backed experiment is desired.
 
-The first integration milestone is therefore an **offline/simulation-only telemetry bridge**. It does not connect to real social networks or automate interaction with real users.
+The current integration therefore has a real offline execution path while keeping LLM credentials and external social networks out of the base YJ-64 test suite. The next step is to replace the fixed smoke-test metrics with a dedicated instrumentation source.
