@@ -1,4 +1,4 @@
-"""Configuration loading and validation."""
+"""Load and validate engine configuration."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ class EngineConfig:
 def _bounded_float(value: Any, name: str) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be numeric")
+
     result = float(value)
     if not 0.0 <= result <= 1.0:
         raise ValueError(f"{name} must be within [0, 1]")
@@ -43,15 +44,19 @@ def _bounded_float(value: Any, name: str) -> float:
 
 
 def load_config(path: Path) -> EngineConfig:
+    """Load an engine configuration from a JSON file."""
     with path.open("r", encoding="utf-8") as handle:
         raw = json.load(handle)
 
     thresholds = raw["thresholds"]
     validation = raw["validation"]
     diagnostics = raw["diagnostics"]
+
     queries = diagnostics.get("queries", [])
     vector_payload = diagnostics.get("vector_payload", "")
-    if not isinstance(queries, list) or not all(isinstance(item, str) and item.strip() for item in queries):
+    if not isinstance(queries, list) or not all(
+        isinstance(item, str) and item.strip() for item in queries
+    ):
         raise ValueError("diagnostics.queries must be a non-empty list of strings")
     if not isinstance(vector_payload, str):
         raise ValueError("diagnostics.vector_payload must be a string")
@@ -69,6 +74,12 @@ def load_config(path: Path) -> EngineConfig:
             entropy=_bounded_float(thresholds["entropy"], "entropy threshold"),
             autonomy=_bounded_float(thresholds["autonomy"], "autonomy threshold"),
         ),
-        validation=ValidationConfig(max_nodes, interval),
-        diagnostics=DiagnosticConfig(tuple(queries), vector_payload),
+        validation=ValidationConfig(
+            max_nodes_per_cycle=max_nodes,
+            interval_seconds=interval,
+        ),
+        diagnostics=DiagnosticConfig(
+            queries=tuple(queries),
+            vector_payload=vector_payload,
+        ),
     )
