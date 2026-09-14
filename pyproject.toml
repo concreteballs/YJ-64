@@ -9,6 +9,9 @@ description = "Modular telemetry and diagnostic verification engine"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+oasis = ["camel-oasis==0.2.5"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
