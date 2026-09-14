@@ -1,4 +1,4 @@
-"""Adapter for feeding OASIS social-simulation events into YJ-64."""
+"""Adapt OASIS simulation events to the telemetry interface."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .models import DiagnosticResult
 
 @dataclass(frozen=True, slots=True)
 class OasisActionEvent:
-    """Normalized observation emitted by an OASIS simulation."""
+    """Normalized event captured from an OASIS simulation."""
 
     agent_id: int | str
     action: str
@@ -27,7 +27,7 @@ class OasisActionEvent:
 
     @classmethod
     def from_mapping(cls, event: Mapping[str, Any]) -> "OasisActionEvent":
-        """Build an event from an OASIS-shaped mapping."""
+        """Create an event from a mapping returned by the integration layer."""
         try:
             return cls(
                 agent_id=event["agent_id"],
@@ -41,7 +41,7 @@ class OasisActionEvent:
             raise ValueError("invalid OASIS event field") from exc
 
     def to_payload(self) -> dict[str, Any]:
-        """Convert the event into the telemetry schema consumed by YJ-64."""
+        """Convert the event to the YJ-64 telemetry schema."""
         return {
             "id": str(self.agent_id),
             "entropy": self.entropy,
@@ -50,27 +50,21 @@ class OasisActionEvent:
 
 
 class OasisTelemetryAdapter:
-    """Bridge normalized OASIS observations to the YJ-64 diagnostic engine.
-
-    The adapter deliberately does not invent entropy or autonomy scores from
-    social actions. The simulation/instrumentation layer supplies those
-    metrics, while this class remains responsible only for normalization and
-    diagnostic validation.
-    """
+    """Validate normalized OASIS events with the diagnostic engine."""
 
     def __init__(self, engine: DiagnosticEngine) -> None:
         self._engine = engine
 
     def observe(self, event: OasisActionEvent) -> DiagnosticResult:
-        """Validate one normalized OASIS event."""
+        """Validate one OASIS event."""
         return self._engine.validate(event.to_payload())
 
     def observe_many(
         self, events: Iterable[OasisActionEvent]
     ) -> list[DiagnosticResult]:
-        """Validate an iterable of OASIS observations."""
+        """Validate an iterable of OASIS events."""
         return [self.observe(event) for event in events]
 
     def observe_mapping(self, event: Mapping[str, Any]) -> DiagnosticResult:
-        """Normalize and validate an OASIS event mapping."""
+        """Normalize and validate one OASIS event mapping."""
         return self.observe(OasisActionEvent.from_mapping(event))
