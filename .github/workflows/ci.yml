@@ -10,10 +10,77 @@ permissions:
   contents: read
 
 jobs:
-  runner-smoke-test:
-    name: Runner smoke test
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  diagnostic-verification:
+    name: Diagnostic verification
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
-      - name: Verify runner execution
-        run: echo "GitHub Actions runner started successfully"
+      - name: Guard diagnostic
+        id: guard
+        run: |
+          set +e
+          python tools/verify_protected_guard.py > guard-diagnostics.txt 2>&1
+          status=$?
+          cat guard-diagnostics.txt
+          exit "$status"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify protected-line guard
+        run: python tools/verify_protected_guard.py
+
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pip install .
+
+      - name: Run unit tests
+        run: python -m pytest -q
+
+      - name: Run isolated diagnostic verification cycle
+        run: |
+          set -o pipefail
+          python main.py 2>&1 | tee diagnostic.log
+
+      - name: Validate diagnostic result artifact
+        run: |
+          python main.py > diagnostic-results.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("diagnostic-results.json")
+          lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+          results = [json.loads(line) for line in lines]
+          if not results:
+              raise SystemExit("No diagnostic results were produced")
+          required = {"node_id", "approved", "reason", "query"}
+          for result in results:
+              if set(result) != required:
+                  raise SystemExit(f"Unexpected diagnostic result schema: {result}")
+          if not any(result["approved"] for result in results):
+              raise SystemExit("Diagnostic cycle produced no approved node")
+          if not any(result["reason"] == "malformed_or_incomplete_packet" for result in results):
+              raise SystemExit("Diagnostic cycle did not exercise malformed-packet handling")
+          print(f"Validated {len(results)} diagnostic result(s)")
+          PY
+
+      - name: Upload diagnostic evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-diagnostic-results
+          path: |
+            diagnostic-results.json
+            diagnostic.log
+            guard-diagnostics.txt
+          if-no-files-found: warn
+          retention-days: 7
