@@ -23,6 +23,7 @@ class ValidationConfig:
 @dataclass(frozen=True, slots=True)
 class DiagnosticConfig:
     queries: tuple[str, ...]
+    vector_payload: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +50,11 @@ def load_config(path: Path) -> EngineConfig:
     validation = raw["validation"]
     diagnostics = raw["diagnostics"]
     queries = diagnostics.get("queries", [])
+    vector_payload = diagnostics.get("vector_payload", "")
     if not isinstance(queries, list) or not all(isinstance(item, str) and item.strip() for item in queries):
         raise ValueError("diagnostics.queries must be a non-empty list of strings")
+    if not isinstance(vector_payload, str):
+        raise ValueError("diagnostics.vector_payload must be a string")
 
     max_nodes = int(validation["max_nodes_per_cycle"])
     if max_nodes < 1:
@@ -66,5 +70,5 @@ def load_config(path: Path) -> EngineConfig:
             autonomy=_bounded_float(thresholds["autonomy"], "autonomy threshold"),
         ),
         validation=ValidationConfig(max_nodes, interval),
-        diagnostics=DiagnosticConfig(tuple(queries)),
+        diagnostics=DiagnosticConfig(tuple(queries), vector_payload),
     )
