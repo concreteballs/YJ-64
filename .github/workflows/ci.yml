@@ -4,12 +4,37 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  runner-diagnostic:
+    name: Runner diagnostic
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Runner preflight
+        run: |
+          echo "Runner preflight started"
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          echo "Arch: $RUNNER_ARCH"
+          echo "Workspace: $GITHUB_WORKSPACE"
+          uname -a
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify repository is available
+        run: |
+          test -f PROTECTED-LINE-GUARD
+          test -f tools/verify_protected_guard.py
+          echo "Repository checkout is available"
+
   diagnostic-verification:
+    name: Diagnostic verification
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
