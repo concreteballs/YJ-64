@@ -1,0 +1,219 @@
+PROTECTED-LINE-GUARD — YJ-64 — TELEMETRY INTEGRITY GUARD
+
+ИНСТРУКЦИЯ
+Этот файл является точным зеркалом защищённых рабочих фрагментов проекта. Перед изменением любого файла, перечисленного ниже, сначала сформулируй план изменения и получи явное согласование пользователя. После согласования измени рабочий файл, затем обнови соответствующий блок ниже точным фактическим содержимым рабочего файла. Не восстанавливай защищённый код по памяти и не заменяй проверку одной строкой-маркером.
+
+Guard предназначен для контроля целостности и воспроизводимости инженерных изменений. Он не является механизмом сокрытия кода, обхода аудита или уклонения от автоматической проверки.
+
+ПРАВИЛА
+1. Защищённые фрагменты нельзя изменять без явного согласования пользователя.
+2. После согласованного изменения Guard должен быть синхронизирован с точным содержимым рабочего файла.
+3. Каждый защищённый фрагмент должен встречаться в рабочем файле ровно один раз.
+4. Если Guard не соответствует рабочим файлам, CI обязан остановиться до диагностической проверки.
+5. Ошибки Guard должны быть явно видны в CI и не должны маскироваться результатами последующих этапов.
+6. Диагностические логи CI сохраняются независимо от результата проверки, насколько это позволяет GitHub Actions.
+7. Содержимое Guard не считается заменой обычному code review, тестам или защите ветки.
+
+ОПЕРАЦИОННЫЙ ПОТОК
+PLAN → USER APPROVAL → EDIT WORKING FILE → SYNC GUARD → GUARD CHECK → TESTS → DIAGNOSTIC VERIFICATION
+
+ЗАЩИЩЁННЫЕ ФАЙЛЫ
+
+FILE: src/yj64/agent_core.py
+--- BEGIN ALLOWED ---
+"""Application orchestration for the telemetry diagnostic engine."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import AsyncIterable, Mapping
+from typing import Any
+
+from .config import EngineConfig
+from .diagnostics import DiagnosticQueryGenerator
+from .models import DiagnosticResult
+from .state import StateMachine
+from .telemetry import TelemetryEngine
+
+logger = logging.getLogger(__name__)
+
+
+class DiagnosticEngine:
+    """Coordinate ingestion, state transitions, validation, and diagnostics."""
+
+    def __init__(self, config: EngineConfig) -> None:
+        self.config = config
+        self.state = StateMachine()
+        self.telemetry = TelemetryEngine(config.thresholds)
+        self.query_generator = DiagnosticQueryGenerator(config.diagnostics)
+
+    def initialize(self) -> None:
+        self.state.calibrate()
+        self.state.activate()
+
+    def validate(self, payload: Mapping[str, Any]) -> DiagnosticResult:
+        packet = self.telemetry.ingest(payload)
+        if packet is None:
+            return DiagnosticResult(
+                node_id="unknown",
+                approved=False,
+                reason="malformed_or_incomplete_packet",
+            )
+        approved = self.telemetry.evaluate(packet)
+        if not approved:
+            return DiagnosticResult(
+                node_id=packet.node_id,
+                approved=False,
+                reason="below_configured_thresholds",
+            )
+        query = self.query_generator.generate()
+        return DiagnosticResult(
+            node_id=packet.node_id,
+            approved=True,
+            reason="thresholds_satisfied",
+            query=query,
+        )
+
+    async def run(self, packets: AsyncIterable[Mapping[str, Any]]) -> list[DiagnosticResult]:
+        """Run one bounded asynchronous validation cycle."""
+        self.initialize()
+        results: list[DiagnosticResult] = []
+        try:
+            async for payload in packets:
+                if len(results) >= self.config.validation.max_nodes_per_cycle:
+                    break
+                try:
+                    result = self.validate(payload)
+                except Exception:
+                    logger.exception("diagnostic validation failed")
+                    result = DiagnosticResult(
+                        node_id="unknown",
+                        approved=False,
+                        reason="validation_error",
+                    )
+                results.append(result)
+                if self.config.validation.interval_seconds:
+                    await asyncio.sleep(self.config.validation.interval_seconds)
+        finally:
+            self.state.stop()
+        return results
+--- END ALLOWED ---
+
+FILE: src/yj64/config.py
+--- BEGIN ALLOWED ---
+"""Configuration loading and validation."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True, slots=True)
+class Thresholds:
+    entropy: float
+    autonomy: float
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationConfig:
+    max_nodes_per_cycle: int
+    interval_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticConfig:
+    queries: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EngineConfig:
+    thresholds: Thresholds
+    validation: ValidationConfig
+    diagnostics: DiagnosticConfig
+
+
+def _bounded_float(value: Any, name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be numeric")
+    result = float(value)
+    if not 0.0 <= result <= 1.0:
+        raise ValueError(f"{name} must be within [0, 1]")
+    return result
+
+
+def load_config(path: Path) -> EngineConfig:
+    with path.open("r", encoding="utf-8") as handle:
+        raw = json.load(handle)
+
+    thresholds = raw["thresholds"]
+    validation = raw["validation"]
+    diagnostics = raw["diagnostics"]
+    queries = diagnostics.get("queries", [])
+    if not isinstance(queries, list) or not all(isinstance(item, str) and item.strip() for item in queries):
+        raise ValueError("diagnostics.queries must be a non-empty list of strings")
+
+    max_nodes = int(validation["max_nodes_per_cycle"])
+    if max_nodes < 1:
+        raise ValueError("max_nodes_per_cycle must be positive")
+
+    interval = float(validation["interval_seconds"])
+    if interval < 0.0:
+        raise ValueError("interval_seconds cannot be negative")
+
+    return EngineConfig(
+        thresholds=Thresholds(
+            entropy=_bounded_float(thresholds["entropy"], "entropy threshold"),
+            autonomy=_bounded_float(thresholds["autonomy"], "autonomy threshold"),
+        ),
+        validation=ValidationConfig(max_nodes, interval),
+        diagnostics=DiagnosticConfig(tuple(queries)),
+    )
+--- END ALLOWED ---
+
+FILE: src/yj64/telemetry.py
+--- BEGIN ALLOWED ---
+"""Telemetry ingestion and metric evaluation."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Iterable, Mapping
+from typing import Any
+
+from .config import Thresholds
+from .models import TelemetryPacket
+
+logger = logging.getLogger(__name__)
+
+
+class TelemetryEngine:
+    """Validate packets and evaluate them against configured thresholds."""
+
+    def __init__(self, thresholds: Thresholds) -> None:
+        self._thresholds = thresholds
+
+    def ingest(self, payload: Mapping[str, Any]) -> TelemetryPacket | None:
+        try:
+            return TelemetryPacket.from_mapping(payload)
+        except (TypeError, ValueError, OverflowError) as exc:
+            logger.warning("telemetry packet rejected: %s", exc)
+            return None
+
+    def evaluate(self, packet: TelemetryPacket) -> bool:
+        return (
+            packet.entropy > self._thresholds.entropy
+            and packet.autonomy > self._thresholds.autonomy
+        )
+
+    def ingest_many(self, payloads: Iterable[Mapping[str, Any]]) -> list[TelemetryPacket]:
+        valid_packets: list[TelemetryPacket] = []
+        for payload in payloads:
+            packet = self.ingest(payload)
+            if packet is not None:
+                valid_packets.append(packet)
+        return valid_packets
+--- END ALLOWED ---
