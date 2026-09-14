@@ -21,7 +21,7 @@ PLAN → USER APPROVAL → EDIT WORKING FILE → SYNC GUARD → GUARD CHECK → 
 
 FILE: src/yj64/agent_core.py
 --- BEGIN ALLOWED ---
-"""Application orchestration for the telemetry diagnostic engine."""
+"""Coordinate telemetry validation and diagnostic processing."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 class DiagnosticEngine:
-    """Coordinate ingestion, state transitions, validation, and diagnostics."""
+    """Orchestrate telemetry ingestion, validation, and diagnostics."""
 
     def __init__(self, config: EngineConfig) -> None:
         self.config = config
@@ -49,10 +49,12 @@ class DiagnosticEngine:
         self.query_generator = DiagnosticQueryGenerator(config.diagnostics)
 
     def initialize(self) -> None:
+        """Initialize the engine state for a validation cycle."""
         self.state.calibrate()
         self.state.activate()
 
     def validate(self, payload: Mapping[str, Any]) -> DiagnosticResult:
+        """Validate one telemetry payload against configured thresholds."""
         packet = self.telemetry.ingest(payload)
         if packet is None:
             return DiagnosticResult(
@@ -60,23 +62,25 @@ class DiagnosticEngine:
                 approved=False,
                 reason="malformed_or_incomplete_packet",
             )
-        approved = self.telemetry.evaluate(packet)
-        if not approved:
+
+        if not self.telemetry.evaluate(packet):
             return DiagnosticResult(
                 node_id=packet.node_id,
                 approved=False,
                 reason="below_configured_thresholds",
             )
-        query = self.query_generator.generate()
+
         return DiagnosticResult(
             node_id=packet.node_id,
             approved=True,
             reason="thresholds_satisfied",
-            query=query,
+            query=self.query_generator.generate(),
         )
 
-    async def run(self, packets: AsyncIterable[Mapping[str, Any]]) -> list[DiagnosticResult]:
-        """Run one bounded asynchronous validation cycle."""
+    async def run(
+        self, packets: AsyncIterable[Mapping[str, Any]]
+    ) -> list[DiagnosticResult]:
+        """Process one bounded asynchronous validation cycle."""
         self.initialize()
         results: list[DiagnosticResult] = []
         try:
@@ -86,15 +90,16 @@ class DiagnosticEngine:
                 try:
                     result = self.validate(payload)
                 except Exception:
-                    logger.exception("diagnostic validation failed")
+                    logger.exception("validation cycle failed for telemetry payload")
                     result = DiagnosticResult(
                         node_id="unknown",
                         approved=False,
                         reason="validation_error",
                     )
                 results.append(result)
-                if self.config.validation.interval_seconds:
-                    await asyncio.sleep(self.config.validation.interval_seconds)
+                interval = self.config.validation.interval_seconds
+                if interval:
+                    await asyncio.sleep(interval)
         finally:
             self.state.stop()
         return results
@@ -102,7 +107,7 @@ class DiagnosticEngine:
 
 FILE: src/yj64/config.py
 --- BEGIN ALLOWED ---
-"""Configuration loading and validation."""
+"""Load and validate engine configuration."""
 
 from __future__ import annotations
 
@@ -140,6 +145,7 @@ class EngineConfig:
 def _bounded_float(value: Any, name: str) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be numeric")
+
     result = float(value)
     if not 0.0 <= result <= 1.0:
         raise ValueError(f"{name} must be within [0, 1]")
@@ -147,15 +153,19 @@ def _bounded_float(value: Any, name: str) -> float:
 
 
 def load_config(path: Path) -> EngineConfig:
+    """Load an engine configuration from a JSON file."""
     with path.open("r", encoding="utf-8") as handle:
         raw = json.load(handle)
 
     thresholds = raw["thresholds"]
     validation = raw["validation"]
     diagnostics = raw["diagnostics"]
+
     queries = diagnostics.get("queries", [])
     vector_payload = diagnostics.get("vector_payload", "")
-    if not isinstance(queries, list) or not all(isinstance(item, str) and item.strip() for item in queries):
+    if not isinstance(queries, list) or not all(
+        isinstance(item, str) and item.strip() for item in queries
+    ):
         raise ValueError("diagnostics.queries must be a non-empty list of strings")
     if not isinstance(vector_payload, str):
         raise ValueError("diagnostics.vector_payload must be a string")
@@ -173,14 +183,20 @@ def load_config(path: Path) -> EngineConfig:
             entropy=_bounded_float(thresholds["entropy"], "entropy threshold"),
             autonomy=_bounded_float(thresholds["autonomy"], "autonomy threshold"),
         ),
-        validation=ValidationConfig(max_nodes, interval),
-        diagnostics=DiagnosticConfig(tuple(queries), vector_payload),
+        validation=ValidationConfig(
+            max_nodes_per_cycle=max_nodes,
+            interval_seconds=interval,
+        ),
+        diagnostics=DiagnosticConfig(
+            queries=tuple(queries),
+            vector_payload=vector_payload,
+        ),
     )
 --- END ALLOWED ---
 
 FILE: src/yj64/telemetry.py
 --- BEGIN ALLOWED ---
-"""Telemetry ingestion and metric evaluation."""
+"""Ingest telemetry and evaluate configured metrics."""
 
 from __future__ import annotations
 
@@ -195,12 +211,13 @@ logger = logging.getLogger(__name__)
 
 
 class TelemetryEngine:
-    """Validate packets and evaluate them against configured thresholds."""
+    """Validate telemetry packets and evaluate configured thresholds."""
 
     def __init__(self, thresholds: Thresholds) -> None:
         self._thresholds = thresholds
 
     def ingest(self, payload: Mapping[str, Any]) -> TelemetryPacket | None:
+        """Parse and validate one telemetry payload."""
         try:
             return TelemetryPacket.from_mapping(payload)
         except (TypeError, ValueError, OverflowError) as exc:
@@ -208,12 +225,16 @@ class TelemetryEngine:
             return None
 
     def evaluate(self, packet: TelemetryPacket) -> bool:
+        """Return whether a packet satisfies the configured thresholds."""
         return (
             packet.entropy > self._thresholds.entropy
             and packet.autonomy > self._thresholds.autonomy
         )
 
-    def ingest_many(self, payloads: Iterable[Mapping[str, Any]]) -> list[TelemetryPacket]:
+    def ingest_many(
+        self, payloads: Iterable[Mapping[str, Any]]
+    ) -> list[TelemetryPacket]:
+        """Parse all valid packets from an iterable of payloads."""
         valid_packets: list[TelemetryPacket] = []
         for payload in payloads:
             packet = self.ingest(payload)
