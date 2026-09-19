@@ -11,20 +11,12 @@ permissions:
 jobs:
   runner-probe:
     name: Runner probe
-    runs-on: self-hosted
+    runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
       - name: Runner allocated
         run: echo "GitHub Actions runner started"
-      - name: Install portable Python
-        shell: bash
-        run: |
-          set -e
-          mkdir -p "$RUNNER_TEMP/python"
-          curl -fL --retry 3 -o "$RUNNER_TEMP/python.tar.gz"             'https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14+20260901-aarch64-unknown-linux-gnu-install_only.tar.gz'
-          tar -xzf "$RUNNER_TEMP/python.tar.gz" -C "$RUNNER_TEMP/python" --strip-components=1
-          echo "$RUNNER_TEMP/python/bin" >> "$GITHUB_PATH"
       - name: Python available
-        run: python --version
+        run: python3 --version
       - name: Shell available
         run: printf 'runner-ok\n'
