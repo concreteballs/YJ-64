@@ -1,0 +1,12 @@
+{
+  "package": "org.blackmirror",
+  "timeout_seconds": 8,
+  "probes": [
+    "device_state",
+    "logcat_crash",
+    "meminfo",
+    "gfxinfo",
+    "top",
+    "app_exit_info"
+  ]
+}
