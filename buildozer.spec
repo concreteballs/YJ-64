@@ -1,4 +1,3 @@
-# YJ-64 Android monitor
 [app]
 title = YJ-64 Monitor
 package.name = yj64monitor
@@ -9,13 +8,15 @@ version = 0.1.0
 requirements = python3,kivy,pyjnius
 orientation = portrait
 fullscreen = 0
-android.api = 35
+android.api = 33
 android.minapi = 24
+android.ndk = 28c
 android.archs = arm64-v8a
-android.permissions = PACKAGE_USAGE_STATS,QUERY_ALL_PACKAGES,FOREGROUND_SERVICE,FOREGROUND_SERVICE_SPECIAL_USE
-android.allow_backup = False
-services = monitor:services/monitor.py:foreground:sticky:foregroundServiceType=specialUse
+android.accept_sdk_license = True
+p4a.branch = develop
+p4a.commit = 5865575d81d53617784428ee29f57be2716311ea
 
 [buildozer]
 log_level = 2
 warn_on_root = 1
+bin_dir = ./bin
