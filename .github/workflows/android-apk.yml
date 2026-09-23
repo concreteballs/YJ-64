@@ -1,0 +1,53 @@
+name: YJ-64 Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "main.py"
+      - "src/**"
+      - "config/android_runtime.json"
+      - "buildozer.spec"
+      - "android_src/**"
+      - ".github/workflows/android-apk.yml"
+
+permissions:
+  contents: read
+
+env:
+  BUILDOZER_WARN_ON_ROOT: "1"
+
+jobs:
+  build-android:
+    name: Build YJ-64 Monitor APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build with Buildozer
+        id: buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          command: buildozer android debug
+          buildozer_version: stable
+
+      - name: Collect build outputs
+        if: always()
+        run: |
+          mkdir -p build-evidence
+          cp -f bin/*.apk build-evidence/ 2>/dev/null || true
+          cp -f buildozer.spec build-evidence/buildozer.spec
+          printf 'APK files found:\n'
+          find build-evidence -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-monitor-apk
+          path: build-evidence/
+          if-no-files-found: warn
+          retention-days: 30
