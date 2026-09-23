@@ -67,10 +67,18 @@ jobs:
           if not any(result["reason"] == "malformed_or_incomplete_packet" for result in results):
               raise SystemExit("Diagnostic cycle did not exercise malformed-packet handling")
 
+          config = json.loads(Path("config/android_runtime.json").read_text(encoding="utf-8"))
+          expected_package = config.get("package")
+          if not isinstance(expected_package, str) or not expected_package:
+              raise SystemExit("Android runtime configuration has no valid package")
+
           runtime_path = Path("android-runtime.json")
           runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
-          if runtime.get("package") != "org.blackmirror":
-              raise SystemExit("Unexpected monitored Android package")
+          if runtime.get("package") != expected_package:
+              raise SystemExit(
+                  f"Unexpected monitored Android package: "
+                  f"{runtime.get('package')!r}; expected {expected_package!r}"
+              )
           if "probes" not in runtime or not isinstance(runtime["probes"], list):
               raise SystemExit("Android runtime evidence is missing probe results")
 
