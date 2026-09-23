@@ -5,20 +5,19 @@ package.domain = org.blackmirror
 source.dir = .
 source.include_exts = py,json,md,txt
 version = 0.1.0
-requirements = python3,kivy,pyjnius
+requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,pyjnius,android,sh<2.0,certifi
 orientation = portrait
 fullscreen = 0
 android.api = 33
 android.minapi = 24
-android.ndk = 28c
-android.archs = arm64-v8a
+android.ndk_api = 24
+android.ndk = 25b
 android.accept_sdk_license = True
-p4a.branch = develop
-p4a.commit = 5865575d81d53617784428ee29f57be2716311ea
+android.archs = arm64-v8a
+android.debug_artifact = apk
+android.p4a_extra_args = --cflags="-Wno-error=implicit-function-declaration"
 
 [buildozer]
 log_level = 2
 warn_on_root = 1
 bin_dir = ./bin
-
-# APK build probe: force a fresh Android packaging run.
