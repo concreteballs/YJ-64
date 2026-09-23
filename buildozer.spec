@@ -20,3 +20,5 @@ p4a.commit = 5865575d81d53617784428ee29f57be2716311ea
 log_level = 2
 warn_on_root = 1
 bin_dir = ./bin
+
+# APK build probe: force a fresh Android packaging run.
