@@ -66,7 +66,16 @@ jobs:
               raise SystemExit("Diagnostic cycle produced no approved node")
           if not any(result["reason"] == "malformed_or_incomplete_packet" for result in results):
               raise SystemExit("Diagnostic cycle did not exercise malformed-packet handling")
+
+          runtime_path = Path("android-runtime.json")
+          runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+          if runtime.get("package") != "org.blackmirror":
+              raise SystemExit("Unexpected monitored Android package")
+          if "probes" not in runtime or not isinstance(runtime["probes"], list):
+              raise SystemExit("Android runtime evidence is missing probe results")
+
           print(f"Validated {len(results)} diagnostic result(s)")
+          print(f"Validated {len(runtime['probes'])} Android runtime probe(s)")
           PY
 
       - name: Upload diagnostic evidence
@@ -78,6 +87,7 @@ jobs:
           path: |
             diagnostic-results.json
             diagnostic.log
+            android-runtime.json
             guard-diagnostics.txt
           if-no-files-found: warn
           retention-days: 7
