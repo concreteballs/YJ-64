@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ async def _packets() -> Any:
         yield packet
 
 
-def _runtime_evidence() -> None:
+def _write_runtime_evidence() -> None:
     config = json.loads(Path("config/android_runtime.json").read_text(encoding="utf-8"))
     collector = AndroidRuntimeCollector(timeout=float(config["timeout_seconds"]))
     snapshot = collector.snapshot(str(config["package"]))
@@ -41,7 +42,11 @@ def _runtime_evidence() -> None:
             for probe in snapshot.probes
         ],
     }
-    print(json.dumps({"android_runtime": evidence}, sort_keys=True))
+    output_path = Path(os.environ.get("YJ64_RUNTIME_REPORT", "android-runtime.json"))
+    output_path.write_text(
+        json.dumps(evidence, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 async def main() -> None:
@@ -55,7 +60,7 @@ async def main() -> None:
             "reason": result.reason,
             "query": result.query,
         }, sort_keys=True))
-    _runtime_evidence()
+    _write_runtime_evidence()
 
 
 if __name__ == "__main__":
