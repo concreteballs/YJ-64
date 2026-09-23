@@ -1,5 +1,5 @@
 {
-  "package": "org.blackmirror",
+  "package": "org.blackmirror.blackmirror",
   "timeout_seconds": 8,
   "probes": [
     "device_state",
