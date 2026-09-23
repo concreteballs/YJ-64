@@ -12,9 +12,9 @@ fullscreen = 0
 android.api = 35
 android.minapi = 24
 android.archs = arm64-v8a
-android.permissions = PACKAGE_USAGE_STATS,QUERY_ALL_PACKAGES
+android.permissions = PACKAGE_USAGE_STATS,QUERY_ALL_PACKAGES,FOREGROUND_SERVICE,FOREGROUND_SERVICE_SPECIAL_USE
 android.allow_backup = False
-android.add_src = android_src
+services = monitor:services/monitor.py:foreground:sticky:foregroundServiceType=specialUse
 
 [buildozer]
 log_level = 2
