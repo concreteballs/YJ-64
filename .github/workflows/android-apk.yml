@@ -60,9 +60,10 @@ jobs:
           python -m pip install pytest
           PYTHONPATH=src python -m unittest discover -s tests -v
 
-      - name: Clean previous Android build artifacts
+      - name: Clean previous Android build artifacts and logs
         run: |
           rm -rf bin .buildozer
+          rm -f build.log buildozer.log
           mkdir -p bin
 
       - name: Build APK
