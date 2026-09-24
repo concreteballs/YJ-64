@@ -8,7 +8,7 @@ version = 0.1.0
 requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,pyjnius,android,sh<2.0,certifi
 orientation = portrait
 fullscreen = 0
-android.api = 33
+android.api = 34
 android.minapi = 24
 android.ndk_api = 24
 android.ndk = 25b
