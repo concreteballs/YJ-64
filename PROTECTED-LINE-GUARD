@@ -636,5 +636,5 @@ while True:
 
 ОЧЕРЕДЬ
 
-1. 0.1.2 baseline restored and synchronized.
+1. 0.1.2 baseline restored and synchronized; immutable approval gate verified.
 2. Any future protected change requires an operation proposal in a prior revision.
