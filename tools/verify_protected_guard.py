@@ -40,7 +40,9 @@ def parse_guard(text: str):
                 raise ValueError("operation has no FILE line")
             path = lines[i][len("FILE: "):].rstrip("\r\n")
             i += 1
-            if i >= len(lines) or lines[i].rstrip("\r\n") != "--- BEGIN PROPOSED CONTENT ---":
+            while i < len(lines) and lines[i].rstrip("\r\n") != "--- BEGIN PROPOSED CONTENT ---":
+                i += 1
+            if i >= len(lines):
                 raise ValueError(f"operation for {path} has no proposed-content marker")
             i += 1
             start = i
