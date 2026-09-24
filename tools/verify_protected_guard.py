@@ -82,7 +82,10 @@ def main() -> int:
         if not target.is_file():
             failures.append(f"{path}: protected file is missing")
         else:
-            count = target.read_text(encoding="utf-8").count(fragment)
+            actual = target.read_text(encoding="utf-8")
+            normalized_fragment = fragment.rstrip("\r\n")
+            normalized_actual = actual.rstrip("\r\n")
+            count = normalized_actual.count(normalized_fragment)
             if count != 1:
                 failures.append(f"{path}: ALLOWED occurrence count={count}, expected 1")
 
@@ -90,7 +93,7 @@ def main() -> int:
         target = ROOT / path
         if not target.is_file():
             failures.append(f"{path}: FORBIDDEN target is missing")
-        elif target.read_text(encoding="utf-8").count(fragment):
+        elif target.read_text(encoding="utf-8").rstrip("\r\n").count(fragment.rstrip("\r\n")):
             failures.append(f"{path}: FORBIDDEN fragment is present")
 
     base = trusted_base()
@@ -113,9 +116,10 @@ def main() -> int:
                 failures.append(f"{path}: cannot read trusted base file: {exc}")
                 continue
             actual = target.read_text(encoding="utf-8")
-            if actual != old:
+            if actual.rstrip("\r\n") != old.rstrip("\r\n"):
                 if not any(
-                    op_path == path and proposed == actual
+                    op_path == path
+                    and proposed.rstrip("\r\n") == actual.rstrip("\r\n")
                     for op_path, proposed in base_ops
                 ):
                     failures.append(
