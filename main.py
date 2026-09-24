@@ -90,6 +90,8 @@ if os.environ.get("ANDROID_ARGUMENT"):
     from kivy.uix.boxlayout import BoxLayout
     from kivy.uix.button import Button
     from kivy.uix.label import Label
+    from kivy.uix.scrollview import ScrollView
+    from kivy.uix.textinput import TextInput
     from jnius import autoclass
 
     class MonitorApp(App):
@@ -111,6 +113,33 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 )
             )
             root.add_widget(self.status)
+
+            root.add_widget(self.status)
+
+            report_scroll = ScrollView(size_hint_y=1)
+            self.report_view = TextInput(
+                text="Отчётов пока нет.",
+                readonly=True,
+                multiline=True,
+                font_size=14,
+                size_hint_y=None,
+                height=240,
+            )
+            self.report_view.bind(
+                minimum_height=lambda instance, value: setattr(
+                    instance, "height", max(value, 240)
+                )
+            )
+            report_scroll.add_widget(self.report_view)
+            root.add_widget(report_scroll)
+
+            report_button = Button(
+                text="Показать отчёт мониторинга",
+                size_hint_y=None,
+                height=60,
+            )
+            report_button.bind(on_release=self.show_report)
+            root.add_widget(report_button)
 
             open_button = Button(
                 text="Открыть доступ к статистике приложений",
@@ -138,6 +167,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
 
             Clock.schedule_once(self.start_monitor, 0)
             Clock.schedule_interval(self.refresh, 1)
+            Clock.schedule_once(self.show_report, 0.5)
             return root
 
         def open_usage_settings(self, *_):
@@ -175,18 +205,34 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     f"Остановка монитора не удалась: {type(exc).__name__}: {exc}"
                 )
 
+        def _report_path(self) -> Path:
+            return Path(self.user_data_dir) / "yj64-monitor.jsonl"
+
+        def show_report(self, *_):
+            report = self._report_path()
+            if not report.exists():
+                self.report_view.text = "Отчётов пока нет. Запусти монитор и целевое приложение."
+                return
+            lines = [line for line in report.read_text(encoding="utf-8").splitlines() if line.strip()]
+            if not lines:
+                self.report_view.text = "Файл отчётов существует, но пока пуст."
+                return
+            formatted = []
+            for index, line in enumerate(lines[-50:], start=max(1, len(lines) - 49)):
+                try:
+                    payload = json.loads(line)
+                    formatted.append("#{}\n{}".format(index, json.dumps(payload, ensure_ascii=False, indent=2)))
+                except json.JSONDecodeError:
+                    formatted.append("#{}\n{}".format(index, line))
+            self.report_view.text = "\n\n".join(formatted)
+
         def refresh(self, *_):
-            report = Path(self.user_data_dir) / "yj64-monitor.jsonl"
+            report = self._report_path()
             if not report.exists():
                 return
-            lines = [
-                line
-                for line in report.read_text(encoding="utf-8").splitlines()
-                if line.strip()
-            ]
+            lines = [line for line in report.read_text(encoding="utf-8").splitlines() if line.strip()]
             if lines:
-                self.status.text = "Последнее событие:\n" + lines[-1]
-
+                self.status.text = "Получено отчётов: {}\nПоследнее событие получено.".format(len(lines))
     MonitorApp().run()
 else:
     asyncio.run(_cli_main())
