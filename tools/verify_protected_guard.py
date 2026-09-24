@@ -100,14 +100,24 @@ def main() -> int:
         except (RuntimeError, ValueError) as exc:
             print(f"GUARD CHECK FAILED: cannot load trusted base Guard: {exc}")
             return 1
-        base_map = dict(base_allowed)
-        for path, old in base_map.items():
+        protected_paths = sorted(
+            {path for path, _ in base_allowed} | {path for path, _ in allowed}
+        )
+        for path in protected_paths:
             target = ROOT / path
             if not target.is_file():
                 continue
+            try:
+                old = git("show", f"{base}:{path}")
+            except RuntimeError as exc:
+                failures.append(f"{path}: cannot read trusted base file: {exc}")
+                continue
             actual = target.read_text(encoding="utf-8")
             if actual != old:
-                if not any(op_path == path and proposed == actual for op_path, proposed in base_ops):
+                if not any(
+                    op_path == path and proposed == actual
+                    for op_path, proposed in base_ops
+                ):
                     failures.append(
                         f"{path}: changed without an OPERATION that existed in the trusted base Guard"
                     )
