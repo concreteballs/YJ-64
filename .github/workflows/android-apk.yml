@@ -42,12 +42,23 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends             git zip unzip autoconf automake libtool libltdl-dev pkg-config             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6             cmake libffi-dev libssl-dev build-essential gettext autopoint
+          sudo apt-get install -y --no-install-recommends             git zip unzip imagemagick autoconf automake libtool libltdl-dev pkg-config             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6             cmake libffi-dev libssl-dev build-essential gettext autopoint
 
       - name: Install Buildozer and Cython
         run: |
           python -m pip install --upgrade pip
           python -m pip install buildozer cython==0.29.36
+
+      - name: Generate monitor icon
+        run: |
+          cat > icon.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+            <rect width="512" height="512" fill="none"/>
+            <circle cx="256" cy="256" r="226" fill="#000000" stroke="#FFFFFF" stroke-width="28"/>
+          </svg>
+          EOF
+          convert -background none icon.svg -resize 512x512 icon.png
+          file icon.png
 
       - name: Validate Python sources
         run: |
