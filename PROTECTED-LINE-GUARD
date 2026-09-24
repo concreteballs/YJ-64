@@ -395,8 +395,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
             root = BoxLayout(orientation="vertical", padding=16, spacing=10)
             root.add_widget(
                 Label(
-                    text="YJ-64 Monitor
-Target: " + TARGET_PACKAGE,
+                    text="YJ-64 Monitor\nTarget: " + TARGET_PACKAGE,
                     size_hint_y=None,
                     height=80,
                 )
@@ -486,11 +485,9 @@ Target: " + TARGET_PACKAGE,
                 if line.strip()
             ]
             if lines:
-                self.report_view.text = "
-".join(lines[-50:])
+                self.report_view.text = "\n".join(lines[-50:])
                 self.status.text = (
-                    "Получено отчётов: {}
-Последнее событие получено."
+                    "Получено отчётов: {}\nПоследнее событие получено."
                     .format(len(lines))
                 )
 
@@ -541,8 +538,7 @@ REPORT.parent.mkdir(parents=True, exist_ok=True)
 
 def write_jsonl(payload: dict[str, Any]) -> None:
     with REPORT.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, sort_keys=True) + "
-")
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
 def handle_bridge_connection(connection: socket.socket) -> None:
@@ -551,18 +547,15 @@ def handle_bridge_connection(connection: socket.socket) -> None:
         raw = connection.recv(65536).decode("utf-8", errors="replace").strip()
         envelope = json.loads(raw)
         if envelope.get("token") != BRIDGE_TOKEN:
-            connection.sendall(b'{"ok":false,"error":"invalid_token"}
-')
+            connection.sendall(b'{"ok":false,"error":"invalid_token"}\n')
             return
 
         report = envelope.get("report")
         if not isinstance(report, dict):
-            connection.sendall(b'{"ok":false,"error":"invalid_report"}
-')
+            connection.sendall(b'{"ok":false,"error":"invalid_report"}\n')
             return
         if report.get("schema") != BRIDGE_SCHEMA:
-            connection.sendall(b'{"ok":false,"error":"unsupported_schema"}
-')
+            connection.sendall(b'{"ok":false,"error":"unsupported_schema"}\n')
             return
 
         write_jsonl(
@@ -577,12 +570,10 @@ def handle_bridge_connection(connection: socket.socket) -> None:
             "ok": True,
             "report_id": report.get("report_id"),
         }
-        connection.sendall((json.dumps(ack) + "
-").encode("utf-8"))
+        connection.sendall((json.dumps(ack) + "\n").encode("utf-8"))
     except (OSError, ValueError, TypeError):
         try:
-            connection.sendall(b'{"ok":false,"error":"malformed_message"}
-')
+            connection.sendall(b'{"ok":false,"error":"malformed_message"}\n')
         except OSError:
             pass
     finally:
@@ -639,7 +630,6 @@ while True:
         last_event = newest
 
     time.sleep(1)
-
 --- END ALLOWED ---
 
 
