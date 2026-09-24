@@ -20,9 +20,15 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Guard verification
+        env:
+          GUARD_BASE_REF: ${{ github.event.before }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
         run: |
+          set -o pipefail
           python tools/verify_protected_guard.py 2>&1 | tee guard-diagnostics.txt
 
       - name: Set up Python
