@@ -4,14 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'buildozer.spec'
-      - 'main.py'
-      - 'src/**'
-      - 'services/**'
-      - 'config/android_runtime.json'
-      - 'android_src/**'
-      - '.github/workflows/android-apk.yml'
-  workflow_dispatch:
+      - 'PROTECTED-LINE-GUARD'
 
 concurrency:
   group: yj64-android-build-${{ github.ref }}
@@ -28,6 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Guard verification
+        run: |
+          python tools/verify_protected_guard.py 2>&1 | tee guard-diagnostics.txt
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -42,7 +39,10 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends             git zip unzip imagemagick autoconf automake libtool libltdl-dev pkg-config             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6             cmake libffi-dev libssl-dev build-essential gettext autopoint
+          sudo apt-get install -y --no-install-recommends \
+            git zip unzip imagemagick autoconf automake libtool libltdl-dev pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
+            cmake libffi-dev libssl-dev build-essential gettext autopoint
 
       - name: Install Buildozer and Cython
         run: |
@@ -94,6 +94,16 @@ jobs:
           SIZE=$(stat -c%s "$APK")
           echo "APK: $APK ($SIZE bytes)"
           sha256sum "$APK"
+
+      - name: Upload Guard diagnostic
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-guard-diagnostic
+          path: guard-diagnostics.txt
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Upload Build log
         if: always()

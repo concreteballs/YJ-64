@@ -1,24 +1,26 @@
-"""Verify exact-content integrity of PROTECTED-LINE-GUARD."""
-
+"""Fail-closed verification for PROTECTED-LINE-GUARD."""
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import sys
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 GUARD = ROOT / "PROTECTED-LINE-GUARD"
 
-
-_ENTRY_PATTERN = re.compile(
+ALLOWED_RE = re.compile(
     r"(?ms)^FILE: (.+?)\n--- BEGIN ALLOWED ---\n(.*?)\n--- END ALLOWED ---"
+)
+FORBIDDEN_RE = re.compile(
+    r"(?ms)^FILE: (.+?)\n--- BEGIN FORBIDDEN ---\n(.*?)\n--- END FORBIDDEN ---"
+)
+OPERATION_RE = re.compile(
+    r"(?ms)^--- BEGIN OPERATION FRAGMENT ---\n(.*?)\n--- END OPERATION FRAGMENT ---"
 )
 
 
-def load_entries(text: str) -> list[tuple[str, str]]:
-    """Parse protected file paths and exact authorized fragments."""
-    return [(path.strip(), fragment) for path, fragment in _ENTRY_PATTERN.findall(text)]
+def _entries(pattern: re.Pattern[str], text: str) -> list[tuple[str, str]]:
+    return [(path.strip(), fragment) for path, fragment in pattern.findall(text)]
 
 
 def main() -> int:
@@ -26,50 +28,63 @@ def main() -> int:
         print("GUARD CHECK FAILED: PROTECTED-LINE-GUARD is missing")
         return 1
 
-    try:
-        guard_text = GUARD.read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"GUARD CHECK FAILED: cannot read guard: {exc}")
-        return 1
+    text = GUARD.read_text(encoding="utf-8")
+    allowed = _entries(ALLOWED_RE, text)
+    forbidden = _entries(FORBIDDEN_RE, text)
+    operations = OPERATION_RE.findall(text)
 
-    entries = load_entries(guard_text)
-    if not entries:
-        print("GUARD CHECK FAILED: no authorized fragments found")
+    if not allowed:
+        print("GUARD CHECK FAILED: no ALLOWED fragments found")
+        return 1
+    if not operations:
+        print("GUARD CHECK FAILED: no OPERATION TABLE fragments found")
         return 1
 
     failures: list[str] = []
-    seen_paths: set[str] = set()
 
-    for relative_path, fragment in entries:
-        if relative_path in seen_paths:
-            failures.append(f"{relative_path}: duplicate FILE entry")
-            continue
-        seen_paths.add(relative_path)
-
+    for relative_path, fragment in allowed:
         target = ROOT / relative_path
         if not target.is_file():
-            failures.append(f"{relative_path}: file is missing")
+            failures.append(f"{relative_path}: protected file is missing")
             continue
-
-        try:
-            actual = target.read_text(encoding="utf-8")
-        except OSError as exc:
-            failures.append(f"{relative_path}: cannot read file: {exc}")
-            continue
-
-        count = actual.count(fragment)
-        if count != 1:
+        actual = target.read_text(encoding="utf-8")
+        if actual.count(fragment) != 1:
             failures.append(
-                f"{relative_path}: authorized fragment occurrence count is {count}, expected exactly 1"
+                f"{relative_path}: ALLOWED fragment does not occur exactly once"
             )
 
+    for relative_path, fragment in forbidden:
+        target = ROOT / relative_path
+        if not target.is_file():
+            failures.append(f"{relative_path}: FORBIDDEN target file is missing")
+            continue
+        actual = target.read_text(encoding="utf-8")
+        if actual.count(fragment) != 0:
+            failures.append(
+                f"{relative_path}: FORBIDDEN fragment is present in working file"
+            )
+
+    # Every operation fragment is forbidden until it is explicitly promoted
+    # into ALLOWED by a later Guard change.
+    protected_paths = sorted({path for path, _ in allowed} | {path for path, _ in forbidden})
+    for fragment in operations:
+        for relative_path in protected_paths:
+            target = ROOT / relative_path
+            if target.is_file() and target.read_text(encoding="utf-8").count(fragment):
+                failures.append(
+                    f"{relative_path}: OPERATION TABLE fragment is present before approval"
+                )
+
     if failures:
-        print("GUARD CHECK FAILED: protected working files differ from authorized content")
-        for item in failures:
-            print(f" - {item}")
+        print("GUARD CHECK FAILED: protected-state invariant violated")
+        for failure in failures:
+            print(f" - {failure}")
         return 1
 
-    print(f"GUARD CHECK PASSED: {len(entries)} authorized fragment(s) match exactly")
+    print(
+        f"GUARD CHECK PASSED: {len(allowed)} ALLOWED, "
+        f"{len(forbidden)} FORBIDDEN, {len(operations)} OPERATION fragments"
+    )
     return 0
 
 
