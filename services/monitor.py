@@ -26,6 +26,8 @@ service.setAutoRestartService(True)
 Context = autoclass("android.content.Context")
 usage = service.getSystemService(Context.USAGE_STATS_SERVICE)
 Event = autoclass("android.app.usage.UsageEvents$Event")
+ActivityManager = autoclass("android.app.ActivityManager")
+activity_manager = service.getSystemService(Context.ACTIVITY_SERVICE)
 
 report_path = os.environ.get("YJ64_MONITOR_REPORT")
 if report_path:
@@ -100,9 +102,39 @@ def bridge_server() -> None:
 threading.Thread(target=bridge_server, name="diagnostic-bridge", daemon=True).start()
 
 last_event = None
+seen_target_running = False
+reported_target_termination = False
+
+
+def target_process_running() -> bool:
+    processes = activity_manager.getRunningAppProcesses()
+    if processes is None:
+        return False
+    for process in processes:
+        if process.processName == TARGET:
+            return True
+    return False
+
 
 while True:
     now = int(time.time() * 1000)
+
+    running = target_process_running()
+    if running:
+        seen_target_running = True
+        reported_target_termination = False
+    elif seen_target_running and not reported_target_termination:
+        write_jsonl(
+            {
+                "timestamp_ms": now,
+                "package": TARGET,
+                "event": "target_process_terminated",
+                "reason": "target_main_process_not_running",
+                "detection": "activity_manager_poll",
+            }
+        )
+        reported_target_termination = True
+
     begin = now - 10_000
     events = usage.queryEvents(begin, now)
     event = Event()
