@@ -146,6 +146,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
             stop_button.bind(on_release=self.stop_monitor)
             root.add_widget(stop_button)
 
+            Clock.schedule_once(self.open_usage_settings, 0.5)
             Clock.schedule_once(self.start_monitor, 0)
             Clock.schedule_interval(self.refresh, 1)
             return root
