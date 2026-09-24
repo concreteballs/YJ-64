@@ -435,6 +435,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
             stop_button.bind(on_release=self.stop_monitor)
             root.add_widget(stop_button)
 
+            Clock.schedule_once(self.open_usage_settings, 0.5)
             Clock.schedule_once(self.start_monitor, 0)
             Clock.schedule_interval(self.refresh, 1)
             return root
@@ -493,7 +494,6 @@ if os.environ.get("ANDROID_ARGUMENT"):
     MonitorApp().run()
 else:
     asyncio.run(_cli_main())
-
 --- END ALLOWED ---
 
 FILE: services/monitor.py
@@ -637,7 +637,7 @@ while True:
 --- BEGIN OPERATION ---
 FILE: main.py
 NAME: startup-open-usage-access-settings
-STATUS: PROPOSED — AWAITING USER APPROVAL
+STATUS: APPROVED — IMPLEMENTED
 PURPOSE: при первом запуске открыть системный экран специального доступа Usage Access; это не выдаёт специальное разрешение автоматически, а переводит пользователя в штатный экран Android.
 --- BEGIN PROPOSED CONTENT ---
 """CLI entry point and Android UI for the YJ-64 diagnostic monitor."""
@@ -854,4 +854,5 @@ else:
 ОЧЕРЕДЬ
 
 1. 0.1.2 baseline restored and synchronized; immutable approval gate verified.
+2. startup-open-usage-access-settings approved and implemented.
 2. Any future protected change requires an operation proposal in a prior revision.
