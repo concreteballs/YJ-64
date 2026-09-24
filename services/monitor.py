@@ -25,6 +25,7 @@ service.setAutoRestartService(True)
 
 Context = autoclass("android.content.Context")
 usage = service.getSystemService(Context.USAGE_STATS_SERVICE)
+activity_manager = service.getSystemService(Context.ACTIVITY_SERVICE)
 Event = autoclass("android.app.usage.UsageEvents$Event")
 
 report_path = os.environ.get("YJ64_MONITOR_REPORT")
@@ -98,6 +99,41 @@ def bridge_server() -> None:
 
 
 threading.Thread(target=bridge_server, name="diagnostic-bridge", daemon=True).start()
+
+
+def target_process_running() -> bool | None:
+    """Return target main-process state; None means the probe failed."""
+    try:
+        processes = activity_manager.getRunningAppProcesses()
+        if processes is None:
+            return False
+        for process in processes:
+            if str(process.processName) == TARGET:
+                return True
+        return False
+    except Exception as exc:
+        write_jsonl(
+            {
+                "timestamp_ms": int(time.time() * 1000),
+                "package": TARGET,
+                "event": "target_process_probe_error",
+                "reason": f"{type(exc).__name__}: {exc}",
+                "detection": "activity_manager_poll",
+            }
+        )
+        return None
+
+
+write_jsonl(
+    {
+        "timestamp_ms": int(time.time() * 1000),
+        "package": TARGET,
+        "event": "monitor_started",
+        "detection": "activity_manager_poll+usage_stats",
+    }
+)
+seen_target_running = False
+reported_target_termination = False
 last_event = None
 
 while True:
@@ -128,5 +164,21 @@ while True:
     if newest and newest != last_event:
         write_jsonl(newest)
         last_event = newest
+
+    running = target_process_running()
+    if running is True:
+        seen_target_running = True
+        reported_target_termination = False
+    elif running is False and seen_target_running and not reported_target_termination:
+        write_jsonl(
+            {
+                "timestamp_ms": now,
+                "package": TARGET,
+                "event": "target_process_terminated",
+                "reason": "target_main_process_not_running",
+                "detection": "activity_manager_poll",
+            }
+        )
+        reported_target_termination = True
 
     time.sleep(1)
