@@ -1,0 +1,62 @@
+name: YJ-64 Guard Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'PROTECTED-LINE-GUARD'
+      - 'buildozer.spec'
+      - 'main.py'
+      - 'services/monitor.py'
+      - 'src/yj64/**'
+      - 'tools/verify_protected_guard.py'
+      - '.github/workflows/guard-check.yml'
+  pull_request:
+    paths:
+      - 'PROTECTED-LINE-GUARD'
+      - 'buildozer.spec'
+      - 'main.py'
+      - 'services/monitor.py'
+      - 'src/yj64/**'
+      - 'tools/verify_protected_guard.py'
+      - '.github/workflows/guard-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Protected-line Guard
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine trusted base
+        id: base
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$PR_BASE" ]; then
+            echo "ref=$PR_BASE" >> "$GITHUB_OUTPUT"
+          elif [ -n "$EVENT_BEFORE" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            echo "ref=$EVENT_BEFORE" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=HEAD^" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Guard verification
+        env:
+          GUARD_BASE_REF: ${{ steps.base.outputs.ref }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -o pipefail
+          python tools/verify_protected_guard.py 2>&1 | tee guard-diagnostics.txt
+      - name: Upload Guard diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-guard-diagnostic
+          path: guard-diagnostics.txt
+          if-no-files-found: warn
+          retention-days: 30
