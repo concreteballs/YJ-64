@@ -27,7 +27,7 @@ report_path = os.environ.get("YJ64_MONITOR_REPORT")
 if report_path:
     REPORT = Path(report_path)
 else:
-    REPORT = Path(str(service.getFilesDir())) / "yj64-monitor.jsonl"
+    REPORT = Path(str(service.getFilesDir())) / "yj64-service-monitor.jsonl"
 
 REPORT.parent.mkdir(parents=True, exist_ok=True)
 
