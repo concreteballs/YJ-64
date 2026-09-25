@@ -558,13 +558,81 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     f"Не удалось записать отчёт запуска: {type(exc).__name__}: {exc}"
                 )
 
+        def diagnose_target_package(self, package_manager):
+            """Report PackageManager visibility and launcher activities for TARGET."""
+            PackageManager = autoclass("android.content.pm.PackageManager")
+            diagnostics = {
+                "source": "monitor_ui",
+                "event": "target_package_diagnostics",
+                "target_package": TARGET_PACKAGE,
+            }
+            try:
+                package_manager.getApplicationInfo(TARGET_PACKAGE, 0)
+                diagnostics["package_visible"] = True
+            except Exception as exc:
+                diagnostics["package_visible"] = False
+                diagnostics["package_visibility_error_type"] = type(exc).__name__
+                diagnostics["package_visibility_error"] = str(exc)
+                return diagnostics
+
+            try:
+                package_info = package_manager.getPackageInfo(
+                    TARGET_PACKAGE, PackageManager.GET_ACTIVITIES
+                )
+                activities = package_info.activities or []
+                diagnostics["activity_count"] = len(activities)
+                diagnostics["activities"] = [
+                    {
+                        "name": str(info.name),
+                        "enabled": bool(info.enabled),
+                        "exported": bool(info.exported),
+                        "permission": str(info.permission or ""),
+                    }
+                    for info in activities
+                ]
+            except Exception as exc:
+                diagnostics["activity_query_error_type"] = type(exc).__name__
+                diagnostics["activity_query_error"] = str(exc)
+
+            try:
+                Intent = autoclass("android.content.Intent")
+                launcher_intent = Intent(Intent.ACTION_MAIN)
+                launcher_intent.addCategory(Intent.CATEGORY_LAUNCHER)
+                launcher_intent.setPackage(TARGET_PACKAGE)
+                matches = package_manager.queryIntentActivities(
+                    launcher_intent, PackageManager.MATCH_ALL
+                )
+                diagnostics["launcher_activity_count"] = len(matches)
+                diagnostics["launcher_activities"] = [
+                    {
+                        "package": str(resolve.activityInfo.packageName),
+                        "name": str(resolve.activityInfo.name),
+                        "enabled": bool(resolve.activityInfo.enabled),
+                        "exported": bool(resolve.activityInfo.exported),
+                    }
+                    for resolve in matches
+                ]
+            except Exception as exc:
+                diagnostics["launcher_query_error_type"] = type(exc).__name__
+                diagnostics["launcher_query_error"] = str(exc)
+
+            try:
+                diagnostics["launch_intent_available"] = (
+                    package_manager.getLaunchIntentForPackage(TARGET_PACKAGE) is not None
+                )
+            except Exception as exc:
+                diagnostics["launch_intent_query_error_type"] = type(exc).__name__
+                diagnostics["launch_intent_query_error"] = str(exc)
+            return diagnostics
+
         def launch_target(self, *_):
             try:
                 Intent = autoclass("android.content.Intent")
                 activity = autoclass("org.kivy.android.PythonActivity").mActivity
-                intent = activity.getPackageManager().getLaunchIntentForPackage(
-                    TARGET_PACKAGE
-                )
+                package_manager = activity.getPackageManager()
+                diagnostics = self.diagnose_target_package(package_manager)
+                self._append_local_report(diagnostics)
+                intent = package_manager.getLaunchIntentForPackage(TARGET_PACKAGE)
                 if intent is None:
                     message = (
                         f"Приложение {TARGET_LABEL} ({TARGET_PACKAGE}) не найдено "
