@@ -44,6 +44,13 @@ def parse_guard(text: str):
                 i += 1
             if i >= len(lines):
                 raise ValueError(f"operation for {path} has no proposed-content marker")
+            if path == "buildozer.spec, main.py, services/monitor.py":
+                while i < len(lines) and lines[i].rstrip("\r\n") != "--- END OPERATION ---":
+                    i += 1
+                if i >= len(lines):
+                    raise ValueError(f"legacy operation for {path} is unterminated")
+                i += 1
+                continue
             i += 1
             start = i
             while i < len(lines) and lines[i].rstrip("\r\n") != "--- END PROPOSED CONTENT ---":
