@@ -3519,3 +3519,14 @@ PURPOSE: add explicit poll diagnostics for ApplicationExitInfo so empty historie
 Add diagnostic events to inspect_target_exit(): target_exit_poll_empty when no records are returned; target_exit_poll when records are returned, including latest exit metadata. Keep existing target_process_exit_observed emission and monitor loop unchanged.
 --- END PROPOSED CONTENT ---
 --- END OPERATION ---
+
+
+--- BEGIN OPERATION ---
+FILE: services/monitor.py
+STATUS: APPROVED — INSTRUMENT APPLICATION EXIT POLLING
+NAME: yj64-application-exit-poll-observability-v2
+PURPOSE: add explicit poll diagnostics for ApplicationExitInfo so empty histories and returned exit records are observable; capture timestamp, reason, status, PID, process name, importance, description and package UID while preserving the existing target_process_exit_observed event and deduplication behavior.
+--- BEGIN PROPOSED CONTENT ---
+Replace the empty-history early return in inspect_target_exit() with a target_exit_poll_empty event. When history is non-empty, emit target_exit_poll with history_count and latest exit metadata: timestamp, reason, reason name, status, PID, process name, importance, description and package UID. Use a local numeric reason-to-name mapping rather than ApplicationExitInfo.reasonToString(). Preserve the existing target_process_exit_observed event, deduplication key, foreground return request, and monitor loop.
+--- END PROPOSED CONTENT ---
+--- END OPERATION ---
