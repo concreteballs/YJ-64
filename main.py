@@ -194,9 +194,12 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 "target_package": TARGET_PACKAGE,
             }
             try:
+                context = autoclass("org.kivy.android.PythonActivity").mActivity
+                source_package = str(context.getPackageName())
+                diagnostics["can_package_query_source_package"] = source_package
                 diagnostics["can_package_query"] = bool(
                     package_manager.canPackageQuery(
-                        str(package_manager.getNameForUid(0)),
+                        source_package,
                         TARGET_PACKAGE,
                     )
                 )
@@ -327,11 +330,23 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     for info in installed_packages
                     if str(info.packageName) == TARGET_PACKAGE
                 ]
+                visible_matching_packages = []
+                for info in installed_packages:
+                    package_name = str(info.packageName or "")
+                    if any(term in package_name.lower() for term in search_terms):
+                        visible_matching_packages.append(
+                            {
+                                "package": package_name,
+                                "version_name": str(info.versionName or ""),
+                                "version_code": int(info.longVersionCode),
+                            }
+                        )
                 diagnostics["installed_package_query"] = "success"
                 diagnostics["target_in_installed_packages"] = bool(
                     target_package_entries
                 )
                 diagnostics["target_installed_package_entries"] = target_package_entries
+                diagnostics["visible_matching_packages"] = visible_matching_packages
             except Exception as exc:
                 diagnostics["installed_package_query"] = "failed"
                 diagnostics["target_in_installed_packages"] = False
@@ -379,6 +394,10 @@ if os.environ.get("ANDROID_ARGUMENT"):
 
             diagnostics["interpretation"] = {
                 "target_package_visible": target_details.get("package_visible"),
+                "visible_matching_package_names": [
+                    item.get("package")
+                    for item in diagnostics.get("visible_matching_packages", [])
+                ],
                 "target_launch_intent_available": target_details.get(
                     "launch_intent_available"
                 ),
