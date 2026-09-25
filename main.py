@@ -135,13 +135,13 @@ if os.environ.get("ANDROID_ARGUMENT"):
             start_button.bind(on_release=self.start_monitor)
             root.add_widget(start_button)
 
-            target_button = Button(
-                text="Запустить Fault Injection",
+            package_diag_button = Button(
+                text="Диагностика пакетов YJ-64",
                 size_hint_y=None,
                 height=60,
             )
-            target_button.bind(on_release=self.launch_target)
-            root.add_widget(target_button)
+            package_diag_button.bind(on_release=self.diagnose_yj64_packages)
+            root.add_widget(package_diag_button)
 
             stop_button = Button(
                 text="Остановить монитор",
@@ -252,56 +252,92 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 diagnostics["launch_intent_query_error"] = str(exc)
             return diagnostics
 
-        def launch_target(self, *_):
+        def diagnose_yj64_packages(self, *_):
+            """List PackageManager-visible apps/packages whose identity contains YJ-64."""
+            PackageManager = autoclass("android.content.pm.PackageManager")
+            Intent = autoclass("android.content.Intent")
+            activity = autoclass("org.kivy.android.PythonActivity").mActivity
+            package_manager = activity.getPackageManager()
+            diagnostics = {
+                "source": "monitor_ui",
+                "event": "yj64_package_diagnostics_started",
+                "filter": "YJ-64",
+                "target_launch_attempted": False,
+            }
+            matches = []
             try:
-                Intent = autoclass("android.content.Intent")
-                activity = autoclass("org.kivy.android.PythonActivity").mActivity
-                package_manager = activity.getPackageManager()
-                diagnostics = self.diagnose_target_package(package_manager)
-                self._append_local_report(diagnostics)
-                intent = package_manager.getLaunchIntentForPackage(TARGET_PACKAGE)
-                if intent is None:
-                    message = (
-                        f"Приложение {TARGET_LABEL} ({TARGET_PACKAGE}) не найдено "
-                        "или не имеет запускаемой Activity."
-                    )
-                    self.status.text = message
-                    self._append_local_report(
-                        {
-                            "source": "monitor_ui",
-                            "event": "target_launch_failed",
-                            "target_package": TARGET_PACKAGE,
-                            "reason": "launch_intent_unavailable",
-                            "message": message,
-                        }
-                    )
-                    return
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                activity.startActivity(intent)
-                self.status.text = (
-                    f"Запуск {TARGET_LABEL} выполнен. Монитор продолжает работать в фоне."
+                applications = package_manager.getInstalledApplications(
+                    PackageManager.MATCH_ALL
                 )
-                self._append_local_report(
-                    {
-                        "source": "monitor_ui",
-                        "event": "target_launch_requested",
-                        "target_package": TARGET_PACKAGE,
-                    }
-                )
+                for application in applications:
+                    package_name = str(application.packageName or "")
+                    try:
+                        label = str(application.loadLabel(package_manager) or "")
+                    except Exception:
+                        label = ""
+                    haystack = f"{package_name} {label}".lower()
+                    if "yj-64" in haystack:
+                        matches.append(
+                            {
+                                "package": package_name,
+                                "label": label,
+                            }
+                        )
+                diagnostics["installed_application_query"] = "success"
+                diagnostics["matching_application_count"] = len(matches)
+                diagnostics["matching_applications"] = matches
             except Exception as exc:
-                message = (
-                    f"Не удалось запустить {TARGET_LABEL}: "
-                    f"{type(exc).__name__}: {exc}"
+                diagnostics["installed_application_query"] = "failed"
+                diagnostics["installed_application_query_error_type"] = type(exc).__name__
+                diagnostics["installed_application_query_error"] = str(exc)
+
+            try:
+                launcher_intent = Intent(Intent.ACTION_MAIN)
+                launcher_intent.addCategory(Intent.CATEGORY_LAUNCHER)
+                launcher_matches = package_manager.queryIntentActivities(
+                    launcher_intent, PackageManager.MATCH_ALL
                 )
-                self.status.text = message
-                self._append_local_report(
-                    {
-                        "source": "monitor_ui",
-                        "event": "target_launch_failed",
-                        "target_package": TARGET_PACKAGE,
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                    }
+                launcher_apps = []
+                for resolve in launcher_matches:
+                    package_name = str(resolve.activityInfo.packageName or "")
+                    try:
+                        label = str(
+                            resolve.activityInfo.applicationInfo.loadLabel(
+                                package_manager
+                            )
+                            or ""
+                        )
+                    except Exception:
+                        label = ""
+                    haystack = f"{package_name} {label}".lower()
+                    if "yj-64" in haystack:
+                        launcher_apps.append(
+                            {
+                                "package": package_name,
+                                "label": label,
+                                "activity": str(resolve.activityInfo.name),
+                            }
+                        )
+                diagnostics["launcher_query"] = "success"
+                diagnostics["matching_launcher_count"] = len(launcher_apps)
+                diagnostics["matching_launcher_activities"] = launcher_apps
+            except Exception as exc:
+                diagnostics["launcher_query"] = "failed"
+                diagnostics["launcher_query_error_type"] = type(exc).__name__
+                diagnostics["launcher_query_error"] = str(exc)
+
+            self._append_local_report(diagnostics)
+            if diagnostics.get("matching_application_count", 0) == 0 and diagnostics.get(
+                "matching_launcher_count", 0
+            ) == 0:
+                self.status.text = (
+                    "PackageManager не нашёл видимых приложений/Activity с YJ-64. "
+                    "См. подробную причину в отчёте."
+                )
+            else:
+                self.status.text = (
+                    "Диагностика YJ-64 завершена: найдено совпадений — "
+                    f"{diagnostics.get('matching_application_count', 0)}."
                 )
 
         def stop_monitor(self, *_):
