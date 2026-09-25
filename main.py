@@ -253,17 +253,24 @@ if os.environ.get("ANDROID_ARGUMENT"):
             return diagnostics
 
         def diagnose_yj64_packages(self, *_):
-            """List PackageManager-visible apps/packages whose identity contains YJ-64."""
+            """Diagnose the target by package identity, labels, and launcher visibility without launching it."""
             PackageManager = autoclass("android.content.pm.PackageManager")
             Intent = autoclass("android.content.Intent")
             activity = autoclass("org.kivy.android.PythonActivity").mActivity
             package_manager = activity.getPackageManager()
+            search_terms = ("yj-64", "fault injection", "blackmirror")
             diagnostics = {
                 "source": "monitor_ui",
                 "event": "yj64_package_diagnostics_started",
-                "filter": "YJ-64",
+                "target_package": TARGET_PACKAGE,
+                "target_label": TARGET_LABEL,
+                "search_terms": list(search_terms),
                 "target_launch_attempted": False,
             }
+
+            target_details = self.diagnose_target_package(package_manager)
+            diagnostics["target_package_diagnostics"] = target_details
+
             matches = []
             try:
                 applications = package_manager.getInstalledApplications(
@@ -276,11 +283,15 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     except Exception:
                         label = ""
                     haystack = f"{package_name} {label}".lower()
-                    if "yj-64" in haystack:
+                    matched_terms = [
+                        term for term in search_terms if term in haystack
+                    ]
+                    if matched_terms:
                         matches.append(
                             {
                                 "package": package_name,
                                 "label": label,
+                                "matched_terms": matched_terms,
                             }
                         )
                 diagnostics["installed_application_query"] = "success"
@@ -291,13 +302,13 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 diagnostics["installed_application_query_error_type"] = type(exc).__name__
                 diagnostics["installed_application_query_error"] = str(exc)
 
+            launcher_apps = []
             try:
                 launcher_intent = Intent(Intent.ACTION_MAIN)
                 launcher_intent.addCategory(Intent.CATEGORY_LAUNCHER)
                 launcher_matches = package_manager.queryIntentActivities(
                     launcher_intent, PackageManager.MATCH_ALL
                 )
-                launcher_apps = []
                 for resolve in launcher_matches:
                     package_name = str(resolve.activityInfo.packageName or "")
                     try:
@@ -310,12 +321,16 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     except Exception:
                         label = ""
                     haystack = f"{package_name} {label}".lower()
-                    if "yj-64" in haystack:
+                    matched_terms = [
+                        term for term in search_terms if term in haystack
+                    ]
+                    if matched_terms:
                         launcher_apps.append(
                             {
                                 "package": package_name,
                                 "label": label,
                                 "activity": str(resolve.activityInfo.name),
+                                "matched_terms": matched_terms,
                             }
                         )
                 diagnostics["launcher_query"] = "success"
@@ -326,19 +341,23 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 diagnostics["launcher_query_error_type"] = type(exc).__name__
                 diagnostics["launcher_query_error"] = str(exc)
 
+            diagnostics["interpretation"] = {
+                "target_package_visible": target_details.get("package_visible"),
+                "target_launch_intent_available": target_details.get(
+                    "launch_intent_available"
+                ),
+                "target_identity_found_in_installed_applications": any(
+                    item.get("package") == TARGET_PACKAGE for item in matches
+                ),
+                "target_identity_found_in_launcher": any(
+                    item.get("package") == TARGET_PACKAGE for item in launcher_apps
+                ),
+            }
             self._append_local_report(diagnostics)
-            if diagnostics.get("matching_application_count", 0) == 0 and diagnostics.get(
-                "matching_launcher_count", 0
-            ) == 0:
-                self.status.text = (
-                    "PackageManager не нашёл видимых приложений/Activity с YJ-64. "
-                    "См. подробную причину в отчёте."
-                )
-            else:
-                self.status.text = (
-                    "Диагностика YJ-64 завершена: найдено совпадений — "
-                    f"{diagnostics.get('matching_application_count', 0)}."
-                )
+            self.status.text = (
+                "Расширенная диагностика пакетов завершена. "
+                "Запуск Fault Injection не выполнялся."
+            )
 
         def stop_monitor(self, *_):
             try:
