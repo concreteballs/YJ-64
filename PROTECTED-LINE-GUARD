@@ -1981,9 +1981,353 @@ else:
 --- END OPERATION ---
 
 
+
 --- BEGIN OPERATION ---
-FILE: buildozer.spec, main.py, services/monitor.py
+FILE: buildozer.spec
 STATUS: APPROVED — IMPLEMENTED
 NAME: target-specific-fault-injection-monitor
-PURPOSE: убрать Usage Access как ненужное разрешение, оставить localhost diagnostic bridge и привязать монитор к единственному target package org.blackmirror.blackmirror; отчёт от Fault Injection принимается независимо от падения его основного процесса.
+PURPOSE: убрать PACKAGE_USAGE_STATS, поскольку для целевого Fault Injection используется адресный diagnostic bridge и внешнему монитору не нужен Usage Access.
+--- BEGIN PROPOSED CONTENT ---
+[app]
+title = YJ-64 Monitor
+package.name = yj64monitor
+package.domain = org.blackmirror
+source.dir = .
+source.include_exts = py,json,md,txt
+version = 0.1.2
+icon.filename = icon.png
+requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,pyjnius,android,sh<2.0,certifi
+orientation = portrait
+fullscreen = 0
+android.api = 34
+android.minapi = 24
+android.ndk_api = 24
+android.ndk = 25b
+android.accept_sdk_license = True
+android.archs = arm64-v8a
+android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_SPECIAL_USE
+services = monitor:services/monitor.py:foreground:sticky:foregroundServiceType=specialUse
+android.debug_artifact = apk
+android.p4a_extra_args = --cflags="-Wno-error=implicit-function-declaration"
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+bin_dir = ./bin
+--- END PROPOSED CONTENT ---
+--- END OPERATION ---
+
+
+--- BEGIN OPERATION ---
+FILE: main.py
+STATUS: APPROVED — IMPLEMENTED
+NAME: target-specific-fault-injection-monitor
+PURPOSE: убрать общий экран Usage Access и оставить UI, привязанный к одному целевому приложению org.blackmirror.blackmirror; отчёт отображается во встроенном TextInput.
+--- BEGIN PROPOSED CONTENT ---
+"""CLI entry point and Android UI for the YJ-64 diagnostic monitor."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+# Buildozer packages the repository root. The Python package lives in src/.
+_SRC_DIR = Path(__file__).resolve().parent / "src"
+if _SRC_DIR.is_dir() and str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+from yj64.agent_core import DiagnosticEngine
+from yj64.android_runtime import AndroidRuntimeCollector
+from yj64.config import load_config
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+TARGET_PACKAGE = "org.blackmirror.blackmirror"
+TARGET_LABEL = "YJ-64 Fault Injection"
+
+
+async def _packets() -> Any:
+    for packet in (
+        {"id": "node_alpha", "entropy": 0.4, "autonomy": 0.5},
+        {"id": "node_omega", "entropy": 0.85, "autonomy": 0.92},
+        {"id": "malformed", "entropy": "invalid"},
+    ):
+        yield packet
+
+
+def _write_runtime_evidence() -> None:
+    config = json.loads(
+        (Path(__file__).resolve().parent / "config/android_runtime.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    collector = AndroidRuntimeCollector(timeout=float(config["timeout_seconds"]))
+    snapshot = collector.snapshot(str(config["package"]))
+    evidence = {
+        "package": snapshot.package,
+        "adb_available": snapshot.adb_available,
+        "probes": [
+            {
+                "name": probe.name,
+                "available": probe.available,
+                "output": probe.output,
+                "error": probe.error,
+            }
+            for probe in snapshot.probes
+        ],
+    }
+    output_path = Path(
+        os.environ.get(
+            "YJ64_RUNTIME_REPORT",
+            str(Path(__file__).resolve().parent / "android-runtime.json"),
+        )
+    )
+    output_path.write_text(
+        json.dumps(evidence, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+async def _cli_main() -> None:
+    config = load_config(Path("config/telemetry.json"))
+    engine = DiagnosticEngine(config)
+    results = await engine.run(_packets())
+    for result in results:
+        print(
+            json.dumps(
+                {
+                    "node_id": result.node_id,
+                    "approved": result.approved,
+                    "reason": result.reason,
+                    "query": result.query,
+                },
+                sort_keys=True,
+            )
+        )
+    _write_runtime_evidence()
+
+
+if os.environ.get("ANDROID_ARGUMENT"):
+    from kivy.app import App
+    from kivy.clock import Clock
+    from kivy.uix.boxlayout import BoxLayout
+    from kivy.uix.button import Button
+    from kivy.uix.label import Label
+    from kivy.uix.textinput import TextInput
+    from jnius import autoclass
+
+    class MonitorApp(App):
+        def build(self):
+            self.status = Label(
+                text="YJ-64: запускается монитор...",
+                halign="left",
+                valign="top",
+            )
+            self.status.bind(
+                size=lambda instance, value: setattr(instance, "text_size", value)
+            )
+            root = BoxLayout(orientation="vertical", padding=16, spacing=10)
+            root.add_widget(
+                Label(
+                    text=(
+                        "YJ-64 Monitor\n"
+                        f"Target: {TARGET_LABEL}\n"
+                        f"Package: {TARGET_PACKAGE}"
+                    ),
+                    size_hint_y=None,
+                    height=110,
+                )
+            )
+            root.add_widget(self.status)
+
+            self.report_view = TextInput(
+                text="Отчёт мониторинга появится здесь.",
+                readonly=True,
+                multiline=True,
+                font_size=14,
+                size_hint_y=1,
+            )
+            root.add_widget(self.report_view)
+
+            start_button = Button(
+                text="Запустить монитор и Fault Injection",
+                size_hint_y=None,
+                height=60,
+            )
+            start_button.bind(on_release=self.start_monitor)
+            root.add_widget(start_button)
+
+            stop_button = Button(
+                text="Остановить монитор",
+                size_hint_y=None,
+                height=60,
+            )
+            stop_button.bind(on_release=self.stop_monitor)
+            root.add_widget(stop_button)
+
+            Clock.schedule_once(self.start_monitor, 0)
+            Clock.schedule_interval(self.refresh, 1)
+            return root
+
+        def start_monitor(self, *_):
+            try:
+                Service = autoclass("org.blackmirror.yj64monitor.ServiceMonitor")
+                activity = autoclass(
+                    "org.kivy.android.PythonActivity"
+                ).mActivity
+                Service.start(activity, "")
+                self.status.text = (
+                    "Монитор запущен. Теперь запустите Fault Injection."
+                )
+            except Exception as exc:
+                self.status.text = (
+                    f"Монитор не запустился: {type(exc).__name__}: {exc}"
+                )
+
+        def stop_monitor(self, *_):
+            try:
+                Service = autoclass("org.blackmirror.yj64monitor.ServiceMonitor")
+                activity = autoclass(
+                    "org.kivy.android.PythonActivity"
+                ).mActivity
+                Service.stop(activity)
+                self.status.text = "Монитор остановлен."
+            except Exception as exc:
+                self.status.text = (
+                    f"Остановка монитора не удалась: {type(exc).__name__}: {exc}"
+                )
+
+        def refresh(self, *_):
+            report = Path(self.user_data_dir) / "yj64-monitor.jsonl"
+            if not report.exists():
+                return
+            lines = [
+                line
+                for line in report.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            if lines:
+                self.report_view.text = "\n".join(lines[-50:])
+                self.status.text = (
+                    "Получено отчётов: {}\nПоследнее событие получено."
+                    .format(len(lines))
+                )
+
+    MonitorApp().run()
+else:
+    asyncio.run(_cli_main())
+--- END PROPOSED CONTENT ---
+--- END OPERATION ---
+
+
+--- BEGIN OPERATION ---
+FILE: services/monitor.py
+STATUS: APPROVED — IMPLEMENTED
+NAME: target-specific-fault-injection-monitor
+PURPOSE: убрать UsageStats polling и оставить только устойчивый foreground diagnostic bridge на localhost:9333 для отчётов конкретного target package.
+--- BEGIN PROPOSED CONTENT ---
+"""YJ-64 Android foreground monitor service."""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import threading
+import time
+from pathlib import Path
+from typing import Any
+
+from jnius import autoclass
+
+
+TARGET = os.environ.get("YJ64_TARGET_PACKAGE", "org.blackmirror.blackmirror")
+BRIDGE_HOST = "127.0.0.1"
+BRIDGE_PORT = int(os.environ.get("YJ64_BRIDGE_PORT", "9333"))
+BRIDGE_TOKEN = os.environ.get("YJ64_BRIDGE_TOKEN", "yj64-dev-bridge-v1")
+BRIDGE_SCHEMA = "yj64.diagnostic.v1"
+
+PythonService = autoclass("org.kivy.android.PythonService")
+service = PythonService.mService
+service.setAutoRestartService(True)
+
+report_path = os.environ.get("YJ64_MONITOR_REPORT")
+if report_path:
+    REPORT = Path(report_path)
+else:
+    REPORT = Path(str(service.getFilesDir())) / "yj64-monitor.jsonl"
+
+REPORT.parent.mkdir(parents=True, exist_ok=True)
+
+
+def write_jsonl(payload: dict[str, Any]) -> None:
+    with REPORT.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def handle_bridge_connection(connection: socket.socket) -> None:
+    try:
+        connection.settimeout(2.0)
+        raw = connection.recv(65536).decode("utf-8", errors="replace").strip()
+        envelope = json.loads(raw)
+        if envelope.get("token") != BRIDGE_TOKEN:
+            connection.sendall(b'{"ok":false,"error":"invalid_token"}\n')
+            return
+
+        report = envelope.get("report")
+        if not isinstance(report, dict):
+            connection.sendall(b'{"ok":false,"error":"invalid_report"}\n')
+            return
+        if report.get("schema") != BRIDGE_SCHEMA:
+            connection.sendall(b'{"ok":false,"error":"unsupported_schema"}\n')
+            return
+
+        write_jsonl(
+            {
+                "source": "internal_diagnostic_agent",
+                "bridge_received": True,
+                "received_at_ms": int(time.time() * 1000),
+                "report": report,
+            }
+        )
+        ack = {
+            "ok": True,
+            "report_id": report.get("report_id"),
+        }
+        connection.sendall((json.dumps(ack) + "\n").encode("utf-8"))
+    except (OSError, ValueError, TypeError):
+        try:
+            connection.sendall(b'{"ok":false,"error":"malformed_message"}\n')
+        except OSError:
+            pass
+    finally:
+        try:
+            connection.close()
+        except OSError:
+            pass
+
+
+def bridge_server() -> None:
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((BRIDGE_HOST, BRIDGE_PORT))
+    server.listen(4)
+    while True:
+        connection, _ = server.accept()
+        threading.Thread(
+            target=handle_bridge_connection,
+            args=(connection,),
+            daemon=True,
+        ).start()
+
+
+threading.Thread(target=bridge_server, name="diagnostic-bridge", daemon=True).start()
+
+while True:
+    time.sleep(30)
+--- END PROPOSED CONTENT ---
 --- END OPERATION ---
