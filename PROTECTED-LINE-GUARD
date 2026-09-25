@@ -500,12 +500,20 @@ if os.environ.get("ANDROID_ARGUMENT"):
             root.add_widget(self.report_view)
 
             start_button = Button(
-                text="Запустить монитор и Fault Injection",
+                text="Запустить монитор",
                 size_hint_y=None,
                 height=60,
             )
             start_button.bind(on_release=self.start_monitor)
             root.add_widget(start_button)
+
+            target_button = Button(
+                text="Запустить Fault Injection",
+                size_hint_y=None,
+                height=60,
+            )
+            target_button.bind(on_release=self.launch_target)
+            root.add_widget(target_button)
 
             stop_button = Button(
                 text="Остановить монитор",
@@ -526,12 +534,78 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     "org.kivy.android.PythonActivity"
                 ).mActivity
                 Service.start(activity, "")
-                self.status.text = (
-                    "Монитор запущен. Теперь запустите Fault Injection."
+                self.status.text = "Монитор запущен."
+                self._append_local_report(
+                    {
+                        "source": "monitor_ui",
+                        "event": "monitor_start_confirmed",
+                        "message": "Foreground monitor service started.",
+                    }
                 )
             except Exception as exc:
                 self.status.text = (
                     f"Монитор не запустился: {type(exc).__name__}: {exc}"
+                )
+
+        def _append_local_report(self, payload):
+            report = Path(self.user_data_dir) / "yj64-monitor.jsonl"
+            try:
+                with report.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(payload, sort_keys=True) + "\n")
+            except OSError as exc:
+                self.status.text = (
+                    f"Не удалось записать отчёт запуска: {type(exc).__name__}: {exc}"
+                )
+
+        def launch_target(self, *_):
+            try:
+                Intent = autoclass("android.content.Intent")
+                activity = autoclass("org.kivy.android.PythonActivity").mActivity
+                intent = activity.getPackageManager().getLaunchIntentForPackage(
+                    TARGET_PACKAGE
+                )
+                if intent is None:
+                    message = (
+                        f"Приложение {TARGET_LABEL} ({TARGET_PACKAGE}) не найдено "
+                        "или не имеет запускаемой Activity."
+                    )
+                    self.status.text = message
+                    self._append_local_report(
+                        {
+                            "source": "monitor_ui",
+                            "event": "target_launch_failed",
+                            "target_package": TARGET_PACKAGE,
+                            "reason": "launch_intent_unavailable",
+                            "message": message,
+                        }
+                    )
+                    return
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(intent)
+                self.status.text = (
+                    f"Запуск {TARGET_LABEL} выполнен. Монитор продолжает работать в фоне."
+                )
+                self._append_local_report(
+                    {
+                        "source": "monitor_ui",
+                        "event": "target_launch_requested",
+                        "target_package": TARGET_PACKAGE,
+                    }
+                )
+            except Exception as exc:
+                message = (
+                    f"Не удалось запустить {TARGET_LABEL}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                self.status.text = message
+                self._append_local_report(
+                    {
+                        "source": "monitor_ui",
+                        "event": "target_launch_failed",
+                        "target_package": TARGET_PACKAGE,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
                 )
 
         def stop_monitor(self, *_):
@@ -609,6 +683,66 @@ def write_jsonl(payload: dict[str, Any]) -> None:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
+def write_event(event: str, **details: Any) -> None:
+    write_jsonl(
+        {
+            "source": "external_monitor",
+            "event": event,
+            "timestamp_ms": int(time.time() * 1000),
+            **details,
+        }
+    )
+
+
+def inspect_target_exit() -> None:
+    try:
+        ApplicationExitInfo = autoclass("android.app.ApplicationExitInfo")
+        manager = service.getSystemService("activity")
+        history = manager.getHistoricalProcessExitReasons(TARGET, 0, 10)
+        if not history:
+            return
+        latest = history[0]
+        timestamp = int(latest.getTimestamp())
+        reason = int(latest.getReason())
+        key = (timestamp, reason)
+        if getattr(inspect_target_exit, "_last_key", None) == key:
+            return
+        inspect_target_exit._last_key = key
+        write_event(
+            "target_process_exit_observed",
+            target_package=TARGET,
+            exit_reason=reason,
+            exit_reason_name=str(ApplicationExitInfo.reasonToString(reason)),
+            target_exit_timestamp_ms=timestamp,
+        )
+        try:
+            Intent = autoclass("android.content.Intent")
+            intent = service.getPackageManager().getLaunchIntentForPackage(
+                service.getPackageName()
+            )
+            if intent is None:
+                raise RuntimeError("monitor launch intent unavailable")
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+            service.startActivity(intent)
+            write_event("monitor_foreground_return_requested")
+        except Exception as exc:
+            write_event(
+                "monitor_foreground_return_failed",
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+    except Exception as exc:
+        write_event(
+            "target_exit_diagnostic_failed",
+            target_package=TARGET,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+
+
 def handle_bridge_connection(connection: socket.socket) -> None:
     try:
         connection.settimeout(2.0)
@@ -665,10 +799,40 @@ def bridge_server() -> None:
         ).start()
 
 
+write_event(
+    "monitor_started",
+    target_package=TARGET,
+    bridge_host=BRIDGE_HOST,
+    bridge_port=BRIDGE_PORT,
+    service_mode="foreground_sticky",
+)
+
+try:
+    ApplicationExitInfo = autoclass("android.app.ApplicationExitInfo")
+    write_event(
+        "target_exit_diagnostics_available",
+        api_level=int(service.getApplicationInfo().targetSdkVersion),
+        api_class=str(ApplicationExitInfo),
+    )
+except Exception as exc:
+    write_event(
+        "target_exit_diagnostics_unavailable",
+        error_type=type(exc).__name__,
+        error=str(exc),
+    )
+
 threading.Thread(target=bridge_server, name="diagnostic-bridge", daemon=True).start()
 
 while True:
-    time.sleep(30)
+    try:
+        inspect_target_exit()
+    except Exception as exc:
+        write_event(
+            "monitor_poll_failed",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+    time.sleep(3)
 --- END ALLOWED ---
 
 
