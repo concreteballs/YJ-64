@@ -15,7 +15,7 @@ android.ndk_api = 24
 android.ndk = 25b
 android.accept_sdk_license = True
 android.archs = arm64-v8a
-android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_SPECIAL_USE,PACKAGE_USAGE_STATS
+android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_SPECIAL_USE
 services = monitor:services/monitor.py:foreground:sticky:foregroundServiceType=specialUse
 android.debug_artifact = apk
 android.p4a_extra_args = --cflags="-Wno-error=implicit-function-declaration"
