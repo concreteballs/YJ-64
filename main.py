@@ -21,6 +21,7 @@ from yj64.config import load_config
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 TARGET_PACKAGE = "org.blackmirror.blackmirror"
+TARGET_LABEL = "YJ-64 Fault Injection"
 
 
 async def _packets() -> Any:
@@ -106,9 +107,13 @@ if os.environ.get("ANDROID_ARGUMENT"):
             root = BoxLayout(orientation="vertical", padding=16, spacing=10)
             root.add_widget(
                 Label(
-                    text="YJ-64 Monitor\nTarget: " + TARGET_PACKAGE,
+                    text=(
+                        "YJ-64 Monitor\n"
+                        f"Target: {TARGET_LABEL}\n"
+                        f"Package: {TARGET_PACKAGE}"
+                    ),
                     size_hint_y=None,
-                    height=80,
+                    height=110,
                 )
             )
             root.add_widget(self.status)
@@ -122,16 +127,8 @@ if os.environ.get("ANDROID_ARGUMENT"):
             )
             root.add_widget(self.report_view)
 
-            open_button = Button(
-                text="Открыть доступ к статистике приложений",
-                size_hint_y=None,
-                height=60,
-            )
-            open_button.bind(on_release=self.open_usage_settings)
-            root.add_widget(open_button)
-
             start_button = Button(
-                text="Запустить монитор",
+                text="Запустить монитор и Fault Injection",
                 size_hint_y=None,
                 height=60,
             )
@@ -146,19 +143,9 @@ if os.environ.get("ANDROID_ARGUMENT"):
             stop_button.bind(on_release=self.stop_monitor)
             root.add_widget(stop_button)
 
-            Clock.schedule_once(self.open_usage_settings, 0.5)
             Clock.schedule_once(self.start_monitor, 0)
             Clock.schedule_interval(self.refresh, 1)
             return root
-
-        def open_usage_settings(self, *_):
-            Settings = autoclass("android.provider.Settings")
-            Intent = autoclass("android.content.Intent")
-            activity = autoclass("org.kivy.android.PythonActivity").mActivity
-            intent = Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)
-            activity.startActivity(intent)
-            self.status.text = "Открой разрешения YJ-64 в системных настройках."
-
 
         def start_monitor(self, *_):
             try:
@@ -168,7 +155,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 ).mActivity
                 Service.start(activity, "")
                 self.status.text = (
-                    "Монитор запущен. Теперь можно запускать целевое приложение."
+                    "Монитор запущен. Fault Injection запускается автоматически."
                 )
             except Exception as exc:
                 self.status.text = (
