@@ -123,11 +123,11 @@ if os.environ.get("ANDROID_ARGUMENT"):
             root.add_widget(self.report_view)
 
             open_button = Button(
-                text="Показать статус доступа к статистике",
+                text="Открыть доступ к статистике приложений",
                 size_hint_y=None,
                 height=60,
             )
-            open_button.bind(on_release=self.show_usage_access_status)
+            open_button.bind(on_release=self.open_usage_settings)
             root.add_widget(open_button)
 
             start_button = Button(
@@ -157,42 +157,6 @@ if os.environ.get("ANDROID_ARGUMENT"):
             activity = autoclass("org.kivy.android.PythonActivity").mActivity
             activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             self.status.text = "Открой доступ для YJ-64 в настройках Android."
-
-        def show_usage_access_status(self, *_):
-            try:
-                activity = autoclass("org.kivy.android.PythonActivity").mActivity
-                Context = autoclass("android.content.Context")
-                AppOpsManager = autoclass("android.app.AppOpsManager")
-                app_ops = activity.getSystemService(Context.APP_OPS_SERVICE)
-                uid = activity.getApplicationInfo().uid
-                package_name = activity.getPackageName()
-                mode = app_ops.checkOpNoThrow(
-                    AppOpsManager.OPSTR_GET_USAGE_STATS,
-                    uid,
-                    package_name,
-                )
-                allowed = mode == AppOpsManager.MODE_ALLOWED
-                access_status = "РАЗРЕШЁН" if allowed else "НЕ РАЗРЕШЁН"
-                self.report_view.text = (
-                    "YJ-64 — статус доступа к статистике приложений\n\n"
-                    f"Приложение монитора: {package_name}\n"
-                    f"Целевое приложение: {TARGET_PACKAGE}\n"
-                    f"Usage Access: {access_status}\n"
-                    f"AppOps mode: {mode}\n\n"
-                    "Если доступ не разрешён, открой системные настройки "
-                    "Usage Access и включи доступ для YJ-64."
-                )
-                self.status.text = (
-                    "Доступ к статистике разрешён."
-                    if allowed
-                    else "Доступ к статистике не разрешён."
-                )
-            except Exception as exc:
-                self.report_view.text = (
-                    "YJ-64 — не удалось определить статус Usage Access\n\n"
-                    f"Ошибка: {type(exc).__name__}: {exc}"
-                )
-                self.status.text = "Не удалось проверить доступ к статистике."
 
 
         def start_monitor(self, *_):
