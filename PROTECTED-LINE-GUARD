@@ -878,10 +878,50 @@ def inspect_target_exit() -> None:
         manager = service.getSystemService("activity")
         history = manager.getHistoricalProcessExitReasons(TARGET, 0, 10)
         if not history:
+            write_event(
+                "target_exit_poll_empty",
+                target_package=TARGET,
+            )
             return
+
         latest = history[0]
         timestamp = int(latest.getTimestamp())
         reason = int(latest.getReason())
+        reason_names = {
+            0: "UNKNOWN",
+            1: "EXIT_SELF",
+            2: "SIGNALED",
+            3: "LOW_MEMORY",
+            4: "CRASH",
+            5: "CRASH_NATIVE",
+            6: "ANR",
+            7: "INITIALIZATION_FAILURE",
+            8: "PERMISSION_CHANGE",
+            9: "EXCESSIVE_RESOURCE_USAGE",
+            10: "USER_REQUESTED",
+            11: "USER_STOPPED",
+            12: "DEPENDENCY_DIED",
+            13: "OTHER",
+            14: "FREEZER",
+            15: "PACKAGE_STATE_CHANGE",
+            16: "PACKAGE_UPDATED",
+            17: "MEMORY_LIMITER",
+            18: "ANOMALY",
+        }
+        write_event(
+            "target_exit_poll",
+            target_package=TARGET,
+            history_count=len(history),
+            latest_timestamp_ms=timestamp,
+            latest_reason=reason,
+            latest_reason_name=reason_names.get(reason, "UNKNOWN"),
+            latest_status=int(latest.getStatus()),
+            latest_pid=int(latest.getPid()),
+            latest_process_name=str(latest.getProcessName() or ""),
+            latest_importance=int(latest.getImportance()),
+            latest_description=str(latest.getDescription() or ""),
+            latest_package_uid=int(latest.getPackageUid()),
+        )
         key = (timestamp, reason)
         if getattr(inspect_target_exit, "_last_key", None) == key:
             return
@@ -1011,6 +1051,7 @@ while True:
             error=str(exc),
         )
     time.sleep(3)
+
 --- END ALLOWED ---
 
 
