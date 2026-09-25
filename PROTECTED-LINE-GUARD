@@ -567,6 +567,18 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 "target_package": TARGET_PACKAGE,
             }
             try:
+                diagnostics["can_package_query"] = bool(
+                    package_manager.canPackageQuery(
+                        str(package_manager.getNameForUid(0)),
+                        TARGET_PACKAGE,
+                    )
+                )
+            except Exception as exc:
+                diagnostics["can_package_query"] = None
+                diagnostics["can_package_query_error_type"] = type(exc).__name__
+                diagnostics["can_package_query_error"] = str(exc)
+
+            try:
                 package_manager.getApplicationInfo(TARGET_PACKAGE, 0)
                 diagnostics["package_visible"] = True
             except Exception as exc:
@@ -675,6 +687,30 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 diagnostics["installed_application_query_error_type"] = type(exc).__name__
                 diagnostics["installed_application_query_error"] = str(exc)
 
+            try:
+                installed_packages = package_manager.getInstalledPackages(
+                    PackageManager.MATCH_ALL
+                )
+                target_package_entries = [
+                    {
+                        "package": str(info.packageName),
+                        "version_name": str(info.versionName or ""),
+                        "version_code": int(info.longVersionCode),
+                    }
+                    for info in installed_packages
+                    if str(info.packageName) == TARGET_PACKAGE
+                ]
+                diagnostics["installed_package_query"] = "success"
+                diagnostics["target_in_installed_packages"] = bool(
+                    target_package_entries
+                )
+                diagnostics["target_installed_package_entries"] = target_package_entries
+            except Exception as exc:
+                diagnostics["installed_package_query"] = "failed"
+                diagnostics["target_in_installed_packages"] = False
+                diagnostics["installed_package_query_error_type"] = type(exc).__name__
+                diagnostics["installed_package_query_error"] = str(exc)
+
             launcher_apps = []
             try:
                 launcher_intent = Intent(Intent.ACTION_MAIN)
@@ -764,7 +800,6 @@ if os.environ.get("ANDROID_ARGUMENT"):
     MonitorApp().run()
 else:
     asyncio.run(_cli_main())
-
 --- END ALLOWED ---
 
 FILE: services/monitor.py
