@@ -155,7 +155,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 ).mActivity
                 Service.start(activity, "")
                 self.status.text = (
-                    "Монитор запущен. Fault Injection запускается автоматически."
+                    "Монитор запущен. Теперь запустите Fault Injection."
                 )
             except Exception as exc:
                 self.status.text = (
