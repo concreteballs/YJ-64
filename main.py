@@ -128,12 +128,20 @@ if os.environ.get("ANDROID_ARGUMENT"):
             root.add_widget(self.report_view)
 
             start_button = Button(
-                text="Запустить монитор и Fault Injection",
+                text="Запустить монитор",
                 size_hint_y=None,
                 height=60,
             )
             start_button.bind(on_release=self.start_monitor)
             root.add_widget(start_button)
+
+            target_button = Button(
+                text="Запустить Fault Injection",
+                size_hint_y=None,
+                height=60,
+            )
+            target_button.bind(on_release=self.launch_target)
+            root.add_widget(target_button)
 
             stop_button = Button(
                 text="Остановить монитор",
@@ -154,12 +162,78 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     "org.kivy.android.PythonActivity"
                 ).mActivity
                 Service.start(activity, "")
-                self.status.text = (
-                    "Монитор запущен. Теперь запустите Fault Injection."
+                self.status.text = "Монитор запущен."
+                self._append_local_report(
+                    {
+                        "source": "monitor_ui",
+                        "event": "monitor_start_confirmed",
+                        "message": "Foreground monitor service started.",
+                    }
                 )
             except Exception as exc:
                 self.status.text = (
                     f"Монитор не запустился: {type(exc).__name__}: {exc}"
+                )
+
+        def _append_local_report(self, payload):
+            report = Path(self.user_data_dir) / "yj64-monitor.jsonl"
+            try:
+                with report.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(payload, sort_keys=True) + "\n")
+            except OSError as exc:
+                self.status.text = (
+                    f"Не удалось записать отчёт запуска: {type(exc).__name__}: {exc}"
+                )
+
+        def launch_target(self, *_):
+            try:
+                Intent = autoclass("android.content.Intent")
+                activity = autoclass("org.kivy.android.PythonActivity").mActivity
+                intent = activity.getPackageManager().getLaunchIntentForPackage(
+                    TARGET_PACKAGE
+                )
+                if intent is None:
+                    message = (
+                        f"Приложение {TARGET_LABEL} ({TARGET_PACKAGE}) не найдено "
+                        "или не имеет запускаемой Activity."
+                    )
+                    self.status.text = message
+                    self._append_local_report(
+                        {
+                            "source": "monitor_ui",
+                            "event": "target_launch_failed",
+                            "target_package": TARGET_PACKAGE,
+                            "reason": "launch_intent_unavailable",
+                            "message": message,
+                        }
+                    )
+                    return
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(intent)
+                self.status.text = (
+                    f"Запуск {TARGET_LABEL} выполнен. Монитор продолжает работать в фоне."
+                )
+                self._append_local_report(
+                    {
+                        "source": "monitor_ui",
+                        "event": "target_launch_requested",
+                        "target_package": TARGET_PACKAGE,
+                    }
+                )
+            except Exception as exc:
+                message = (
+                    f"Не удалось запустить {TARGET_LABEL}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                self.status.text = message
+                self._append_local_report(
+                    {
+                        "source": "monitor_ui",
+                        "event": "target_launch_failed",
+                        "target_package": TARGET_PACKAGE,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
                 )
 
         def stop_monitor(self, *_):
