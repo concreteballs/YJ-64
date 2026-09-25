@@ -154,10 +154,8 @@ if os.environ.get("ANDROID_ARGUMENT"):
         def open_usage_settings(self, *_):
             Settings = autoclass("android.provider.Settings")
             Intent = autoclass("android.content.Intent")
-            Uri = autoclass("android.net.Uri")
             activity = autoclass("org.kivy.android.PythonActivity").mActivity
-            intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            intent.setData(Uri.parse("package:" + activity.getPackageName()))
+            intent = Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)
             activity.startActivity(intent)
             self.status.text = "Открой разрешения YJ-64 в системных настройках."
 
