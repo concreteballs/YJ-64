@@ -23,10 +23,6 @@ PythonService = autoclass("org.kivy.android.PythonService")
 service = PythonService.mService
 service.setAutoRestartService(True)
 
-Context = autoclass("android.content.Context")
-usage = service.getSystemService(Context.USAGE_STATS_SERVICE)
-Event = autoclass("android.app.usage.UsageEvents$Event")
-
 report_path = os.environ.get("YJ64_MONITOR_REPORT")
 if report_path:
     REPORT = Path(report_path)
