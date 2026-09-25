@@ -37,6 +37,66 @@ def write_jsonl(payload: dict[str, Any]) -> None:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
+def write_event(event: str, **details: Any) -> None:
+    write_jsonl(
+        {
+            "source": "external_monitor",
+            "event": event,
+            "timestamp_ms": int(time.time() * 1000),
+            **details,
+        }
+    )
+
+
+def inspect_target_exit() -> None:
+    try:
+        ApplicationExitInfo = autoclass("android.app.ApplicationExitInfo")
+        manager = service.getSystemService("activity")
+        history = manager.getHistoricalProcessExitReasons(TARGET, 0, 10)
+        if not history:
+            return
+        latest = history[0]
+        timestamp = int(latest.getTimestamp())
+        reason = int(latest.getReason())
+        key = (timestamp, reason)
+        if getattr(inspect_target_exit, "_last_key", None) == key:
+            return
+        inspect_target_exit._last_key = key
+        write_event(
+            "target_process_exit_observed",
+            target_package=TARGET,
+            exit_reason=reason,
+            exit_reason_name=str(ApplicationExitInfo.reasonToString(reason)),
+            target_exit_timestamp_ms=timestamp,
+        )
+        try:
+            Intent = autoclass("android.content.Intent")
+            intent = service.getPackageManager().getLaunchIntentForPackage(
+                service.getPackageName()
+            )
+            if intent is None:
+                raise RuntimeError("monitor launch intent unavailable")
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+            service.startActivity(intent)
+            write_event("monitor_foreground_return_requested")
+        except Exception as exc:
+            write_event(
+                "monitor_foreground_return_failed",
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+    except Exception as exc:
+        write_event(
+            "target_exit_diagnostic_failed",
+            target_package=TARGET,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+
+
 def handle_bridge_connection(connection: socket.socket) -> None:
     try:
         connection.settimeout(2.0)
@@ -93,7 +153,37 @@ def bridge_server() -> None:
         ).start()
 
 
+write_event(
+    "monitor_started",
+    target_package=TARGET,
+    bridge_host=BRIDGE_HOST,
+    bridge_port=BRIDGE_PORT,
+    service_mode="foreground_sticky",
+)
+
+try:
+    ApplicationExitInfo = autoclass("android.app.ApplicationExitInfo")
+    write_event(
+        "target_exit_diagnostics_available",
+        api_level=int(service.getApplicationInfo().targetSdkVersion),
+        api_class=str(ApplicationExitInfo),
+    )
+except Exception as exc:
+    write_event(
+        "target_exit_diagnostics_unavailable",
+        error_type=type(exc).__name__,
+        error=str(exc),
+    )
+
 threading.Thread(target=bridge_server, name="diagnostic-bridge", daemon=True).start()
 
 while True:
-    time.sleep(30)
+    try:
+        inspect_target_exit()
+    except Exception as exc:
+        write_event(
+            "monitor_poll_failed",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+    time.sleep(3)
