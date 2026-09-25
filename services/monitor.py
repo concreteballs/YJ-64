@@ -94,35 +94,6 @@ def bridge_server() -> None:
 
 
 threading.Thread(target=bridge_server, name="diagnostic-bridge", daemon=True).start()
-last_event = None
 
 while True:
-    now = int(time.time() * 1000)
-    begin = now - 10_000
-    events = usage.queryEvents(begin, now)
-    event = Event()
-    newest = None
-
-    while events is not None and events.hasNextEvent():
-        events.getNextEvent(event)
-        package_name = event.getPackageName()
-        if package_name != TARGET:
-            continue
-
-        event_type = event.getEventType()
-        if event_type in (Event.MOVE_TO_FOREGROUND, Event.MOVE_TO_BACKGROUND):
-            newest = {
-                "timestamp_ms": int(event.getTimeStamp()),
-                "package": TARGET,
-                "event": (
-                    "foreground"
-                    if event_type == Event.MOVE_TO_FOREGROUND
-                    else "background"
-                ),
-            }
-
-    if newest and newest != last_event:
-        write_jsonl(newest)
-        last_event = newest
-
-    time.sleep(1)
+    time.sleep(30)
