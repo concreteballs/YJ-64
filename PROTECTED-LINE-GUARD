@@ -257,7 +257,6 @@ version 0.1.2 — verified permission-access baseline.
 
 FILE: buildozer.spec
 --- BEGIN ALLOWED ---
-[ap
 [app]
 title = YJ-64 Monitor
 package.name = yj64monitor
@@ -283,11 +282,11 @@ android.p4a_extra_args = --cflags="-Wno-error=implicit-function-declaration"
 [buildozer]
 log_level = 2
 warn_on_root = 1
-bin_dir = ./bin--- END ALLOWED ---
+bin_dir = ./bin
+--- END ALLOWED ---
 
 FILE: main.py
 --- BEGIN ALLOWED ---
-"""
 """CLI entry point and Android UI for the YJ-64 diagnostic monitor."""
 
 from __future__ import annotations
@@ -488,7 +487,6 @@ else:
 
 FILE: services/monitor.py
 --- BEGIN ALLOWED ---
-"""
 """YJ-64 Android foreground monitor service."""
 
 from __future__ import annotations
