@@ -18,7 +18,6 @@ android.archs = arm64-v8a
 android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_SPECIAL_USE
 services = monitor:services/monitor.py:foreground:sticky:foregroundServiceType=specialUse
 android.debug_artifact = apk
-p4a.extra_args = --cflags="-Wno-error=implicit-function-declaration"
 android.extra_manifest_xml = ./android/extra_manifest.xml
 
 [buildozer]
