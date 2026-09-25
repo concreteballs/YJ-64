@@ -143,6 +143,14 @@ if os.environ.get("ANDROID_ARGUMENT"):
             package_diag_button.bind(on_release=self.diagnose_yj64_packages)
             root.add_widget(package_diag_button)
 
+            service_log_button = Button(
+                text="Показать service log",
+                size_hint_y=None,
+                height=60,
+            )
+            service_log_button.bind(on_release=self.show_service_log)
+            root.add_widget(service_log_button)
+
             stop_button = Button(
                 text="Остановить монитор",
                 size_hint_y=None,
@@ -413,6 +421,29 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 "Расширенная диагностика пакетов завершена. "
                 "Запуск Fault Injection не выполнялся."
             )
+
+        def show_service_log(self, *_):
+            """Load the foreground-service diagnostic log into the UI."""
+            try:
+                service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+                if not service_report.exists():
+                    self.report_view.text = "Service log пока не создан."
+                    self.status.text = "Service log отсутствует."
+                    return
+                lines = [
+                    line
+                    for line in service_report.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+                self.report_view.text = "\n".join(lines[-200:])
+                self.status.text = (
+                    "Показан service log: {} событий."
+                    .format(len(lines))
+                )
+            except OSError as exc:
+                self.status.text = (
+                    f"Не удалось прочитать service log: {type(exc).__name__}: {exc}"
+                )
 
         def stop_monitor(self, *_):
             try:
