@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -303,7 +304,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 "source": "monitor_ui",
                 "event": "target_runtime_snapshot",
                 "target_package": TARGET_PACKAGE,
-                "captured_at_ms": int(__import__("time").time() * 1000),
+                "captured_at_ms": int(time.time() * 1000),
             }
             try:
                 target_uid = int(
