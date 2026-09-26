@@ -699,15 +699,48 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     for process in processes
                     if int(process.uid) == target_uid
                 ]
-                snapshot["process_state"] = (
-                    "running" if matching else "not_in_running_process_list"
-                )
                 snapshot["process_count"] = len(matching)
                 snapshot["processes"] = matching
+                # Android restricts cross-application process visibility on modern
+                # releases. An empty filtered list therefore cannot be treated as
+                # proof that the target is dead.
+                snapshot["process_state"] = (
+                    "visible_running"
+                    if matching
+                    else "not_observable_via_cross_app_process_list"
+                )
+                snapshot["process_visibility_limit"] = (
+                    "target_is_a_different_application_uid"
+                )
             except Exception as exc:
                 snapshot["process_state"] = "inspection_failed"
                 snapshot["process_error_type"] = type(exc).__name__
                 snapshot["process_error"] = str(exc)
+
+            try:
+                application_info = package_manager.getApplicationInfo(
+                    TARGET_PACKAGE, 0
+                )
+                stopped_flag = int(
+                    getattr(application_info, "FLAG_STOPPED", 2097152)
+                )
+                app_flags = int(application_info.flags)
+                snapshot["package_state"] = {
+                    "application_flags": app_flags,
+                    "stopped": bool(app_flags & stopped_flag),
+                    "enabled": bool(application_info.enabled),
+                    "installed": bool(
+                        app_flags
+                        & int(getattr(application_info, "FLAG_INSTALLED", 8388608))
+                    ),
+                    "suspended": bool(
+                        app_flags
+                        & int(getattr(application_info, "FLAG_SUSPENDED", 1073741824))
+                    ),
+                }
+            except Exception as exc:
+                snapshot["package_state_error_type"] = type(exc).__name__
+                snapshot["package_state_error"] = str(exc)
 
             try:
                 activity_manager = autoclass(
