@@ -119,6 +119,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
             root.add_widget(self.status)
 
             self._showing_service_log = False
+            self._last_target_exit_key = None
 
             self.report_view = TextInput(
                 text="Отчёт мониторинга появится здесь.",
@@ -448,6 +449,57 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     f"Не удалось прочитать service log: {type(exc).__name__}: {exc}"
                 )
 
+        def _poll_target_exit(self):
+            """Poll Android historical exits for the target and expose them in the UI report."""
+            try:
+                ApplicationExitInfo = autoclass("android.app.ApplicationExitInfo")
+                activity = autoclass("org.kivy.android.PythonActivity").mActivity
+                manager = activity.getSystemService("activity")
+                history = manager.getHistoricalProcessExitReasons(TARGET_PACKAGE, 0, 10)
+                if not history:
+                    return
+
+                latest = history[0]
+                timestamp = int(latest.getTimestamp())
+                reason = int(latest.getReason())
+                key = (timestamp, reason)
+                if self._last_target_exit_key == key:
+                    return
+                self._last_target_exit_key = key
+                self._append_local_report(
+                    {
+                        "source": "monitor_ui",
+                        "event": "target_process_exit_observed",
+                        "target_package": TARGET_PACKAGE,
+                        "target_exit_timestamp_ms": timestamp,
+                        "exit_reason": reason,
+                        "exit_reason_name": str(
+                            ApplicationExitInfo.reasonToString(reason)
+                        ),
+                        "status": int(latest.getStatus()),
+                        "pid": int(latest.getPid()),
+                        "process_name": str(latest.getProcessName() or ""),
+                        "importance": int(latest.getImportance()),
+                        "description": str(latest.getDescription() or ""),
+                        "package_uid": int(latest.getPackageUid()),
+                        "history_count": len(history),
+                    }
+                )
+            except Exception as exc:
+                key = (type(exc).__name__, str(exc))
+                if getattr(self, "_last_target_exit_error_key", None) == key:
+                    return
+                self._last_target_exit_error_key = key
+                self._append_local_report(
+                    {
+                        "source": "monitor_ui",
+                        "event": "target_exit_diagnostic_failed",
+                        "target_package": TARGET_PACKAGE,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                )
+
         def stop_monitor(self, *_):
             try:
                 Service = autoclass("org.blackmirror.yj64monitor.ServiceMonitor")
@@ -464,6 +516,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
         def refresh(self, *_):
             if getattr(self, "_showing_service_log", False):
                 return
+            self._poll_target_exit()
             report = Path(self.user_data_dir) / "yj64-monitor.jsonl"
             if not report.exists():
                 return
