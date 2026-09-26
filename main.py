@@ -118,6 +118,8 @@ if os.environ.get("ANDROID_ARGUMENT"):
             )
             root.add_widget(self.status)
 
+            self._showing_service_log = False
+
             self.report_view = TextInput(
                 text="Отчёт мониторинга появится здесь.",
                 readonly=True,
@@ -426,6 +428,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
             """Load the foreground-service diagnostic log into the UI."""
             try:
                 service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+                self._showing_service_log = True
                 if not service_report.exists():
                     self.report_view.text = "Service log пока не создан."
                     self.status.text = "Service log отсутствует."
@@ -459,6 +462,8 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 )
 
         def refresh(self, *_):
+            if getattr(self, "_showing_service_log", False):
+                return
             report = Path(self.user_data_dir) / "yj64-monitor.jsonl"
             if not report.exists():
                 return
