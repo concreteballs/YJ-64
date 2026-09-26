@@ -23,6 +23,72 @@ PythonService = autoclass("org.kivy.android.PythonService")
 service = PythonService.mService
 service.setAutoRestartService(True)
 
+# Ignore historical exits that happened before this monitor instance started.
+_last_exit_key = None
+_last_process_state = None
+
+
+def _latest_exit_key() -> tuple[int, int] | None:
+    try:
+        manager = service.getSystemService("activity")
+        history = manager.getHistoricalProcessExitReasons(TARGET, 0, 1)
+        if not history:
+            return None
+        latest = history[0]
+        return (int(latest.getTimestamp()), int(latest.getReason()))
+    except Exception:
+        return None
+
+
+def _target_process_snapshot() -> list[dict[str, Any]]:
+    """Return currently running processes belonging to the target UID."""
+    try:
+        package_manager = service.getPackageManager()
+        target_uid = int(package_manager.getApplicationInfo(TARGET, 0).uid)
+        manager = service.getSystemService("activity")
+        processes = manager.getRunningAppProcesses() or []
+        return [
+            {
+                "pid": int(process.pid),
+                "process_name": str(process.processName or ""),
+                "importance": int(process.importance),
+                "importance_reason_code": int(process.importanceReasonCode),
+                "importance_reason_pid": int(process.importanceReasonPid),
+            }
+            for process in processes
+            if int(process.uid) == target_uid
+        ]
+    except Exception as exc:
+        write_event(
+            "target_process_state_failed",
+            target_package=TARGET,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        return []
+
+
+def inspect_target_process_state() -> None:
+    global _last_process_state
+    processes = _target_process_snapshot()
+    state = "running" if processes else "not_in_running_process_list"
+    key = (state, tuple((item["pid"], item["process_name"]) for item in processes))
+    if key == _last_process_state:
+        return
+    previous = _last_process_state
+    _last_process_state = key
+    write_event(
+        "target_process_state_changed",
+        target_package=TARGET,
+        previous_state=(previous[0] if previous else None),
+        state=state,
+        process_count=len(processes),
+        processes=processes,
+    )
+
+
+_last_exit_key = _latest_exit_key()
+
 report_path = os.environ.get("YJ64_MONITOR_REPORT")
 if report_path:
     REPORT = Path(report_path)
@@ -49,6 +115,7 @@ def write_event(event: str, **details: Any) -> None:
 
 
 def inspect_target_exit() -> None:
+    global _last_exit_key
     try:
         ApplicationExitInfo = autoclass("android.app.ApplicationExitInfo")
         manager = service.getSystemService("activity")
@@ -99,9 +166,9 @@ def inspect_target_exit() -> None:
             latest_package_uid=int(latest.getPackageUid()),
         )
         key = (timestamp, reason)
-        if getattr(inspect_target_exit, "_last_key", None) == key:
+        if _last_exit_key == key or timestamp <= (_last_exit_key[0] if _last_exit_key else -1):
             return
-        inspect_target_exit._last_key = key
+        _last_exit_key = key
         write_event(
             "target_process_exit_observed",
             target_package=TARGET,
@@ -219,6 +286,7 @@ threading.Thread(target=bridge_server, name="diagnostic-bridge", daemon=True).st
 
 while True:
     try:
+        inspect_target_process_state()
         inspect_target_exit()
     except Exception as exc:
         write_event(
