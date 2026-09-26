@@ -5301,4 +5301,4 @@ while True:
         )
     time.sleep(3)
 --- END PROPOSED CONTENT ---
-BUILD_TRIGGER: yj64-target-process-state-diagnostics
+BUILD_TRIGGER: yj64-live-runtime-snapshot
