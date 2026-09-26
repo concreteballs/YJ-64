@@ -379,6 +379,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -667,6 +668,80 @@ if os.environ.get("ANDROID_ARGUMENT"):
                 diagnostics["launch_intent_query_error"] = str(exc)
             return diagnostics
 
+        def capture_target_runtime_snapshot(self, package_manager):
+            """Capture live target process state and the newest recorded exit on every manual diagnostic press."""
+            ActivityManager = autoclass("android.app.ActivityManager")
+            ApplicationExitInfo = autoclass("android.app.ApplicationExitInfo")
+            snapshot = {
+                "source": "monitor_ui",
+                "event": "target_runtime_snapshot",
+                "target_package": TARGET_PACKAGE,
+                "captured_at_ms": int(time.time() * 1000),
+            }
+            try:
+                target_uid = int(
+                    package_manager.getApplicationInfo(TARGET_PACKAGE, 0).uid
+                )
+                snapshot["target_uid"] = target_uid
+                activity_manager = autoclass(
+                    "org.kivy.android.PythonActivity"
+                ).mActivity.getSystemService("activity")
+                processes = activity_manager.getRunningAppProcesses() or []
+                matching = [
+                    {
+                        "pid": int(process.pid),
+                        "process_name": str(process.processName or ""),
+                        "uid": int(process.uid),
+                        "importance": int(process.importance),
+                        "importance_reason_code": int(process.importanceReasonCode),
+                        "importance_reason_pid": int(process.importanceReasonPid),
+                    }
+                    for process in processes
+                    if int(process.uid) == target_uid
+                ]
+                snapshot["process_state"] = (
+                    "running" if matching else "not_in_running_process_list"
+                )
+                snapshot["process_count"] = len(matching)
+                snapshot["processes"] = matching
+            except Exception as exc:
+                snapshot["process_state"] = "inspection_failed"
+                snapshot["process_error_type"] = type(exc).__name__
+                snapshot["process_error"] = str(exc)
+
+            try:
+                activity_manager = autoclass(
+                    "org.kivy.android.PythonActivity"
+                ).mActivity.getSystemService("activity")
+                history = activity_manager.getHistoricalProcessExitReasons(
+                    TARGET_PACKAGE, 0, 10
+                )
+                snapshot["exit_history_count"] = len(history)
+                if history:
+                    latest = history[0]
+                    reason = int(latest.getReason())
+                    snapshot["latest_exit"] = {
+                        "timestamp_ms": int(latest.getTimestamp()),
+                        "reason": reason,
+                        "reason_name": str(
+                            ApplicationExitInfo.reasonToString(reason)
+                        ),
+                        "status": int(latest.getStatus()),
+                        "pid": int(latest.getPid()),
+                        "process_name": str(latest.getProcessName() or ""),
+                        "importance": int(latest.getImportance()),
+                        "description": str(latest.getDescription() or ""),
+                        "package_uid": int(latest.getPackageUid()),
+                    }
+                else:
+                    snapshot["latest_exit"] = None
+            except Exception as exc:
+                snapshot["exit_query_error_type"] = type(exc).__name__
+                snapshot["exit_query_error"] = str(exc)
+
+            self._append_local_report(snapshot)
+            return snapshot
+
         def diagnose_yj64_packages(self, *_):
             """Diagnose the target by package identity, labels, and launcher visibility without launching it."""
             PackageManager = autoclass("android.content.pm.PackageManager")
@@ -685,6 +760,9 @@ if os.environ.get("ANDROID_ARGUMENT"):
 
             target_details = self.diagnose_target_package(package_manager)
             diagnostics["target_package_diagnostics"] = target_details
+            diagnostics["runtime_snapshot"] = self.capture_target_runtime_snapshot(
+                package_manager
+            )
 
             matches = []
             try:
@@ -892,7 +970,6 @@ if os.environ.get("ANDROID_ARGUMENT"):
     MonitorApp().run()
 else:
     asyncio.run(_cli_main())
-
 --- END ALLOWED ---
 
 FILE: services/monitor.py
