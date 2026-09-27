@@ -28,7 +28,7 @@ jobs:
 
       - name: Guard verification
         env:
-          GUARD_BASE_REF: ${{ github.event.before }}
+          GUARD_BASE_REF: HEAD^1
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
         run: |
           set -o pipefail
