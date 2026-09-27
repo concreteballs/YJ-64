@@ -34,6 +34,10 @@ _last_process_state = None
 _event_sequence = 0
 _last_command_id = None
 
+# Suppress identical observations while retaining a count of suppressed polls.
+_last_event_fingerprints: dict[str, str] = {}
+_last_event_repeat_counts: dict[str, int] = {}
+
 
 def _new_message_metadata(prefix: str) -> dict[str, Any]:
     global _event_sequence
@@ -121,7 +125,31 @@ def write_jsonl(payload: dict[str, Any]) -> None:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
+def _event_fingerprint(details: dict[str, Any]) -> str:
+    return json.dumps(details, sort_keys=True, separators=(",", ":"), default=str)
+
+
 def write_event(event: str, **details: Any) -> None:
+    fingerprint = _event_fingerprint(details)
+    previous_fingerprint = _last_event_fingerprints.get(event)
+
+    if previous_fingerprint == fingerprint:
+        _last_event_repeat_counts[event] = (
+            _last_event_repeat_counts.get(event, 1) + 1
+        )
+        return
+
+    suppressed_count = _last_event_repeat_counts.get(event, 0)
+    _last_event_fingerprints[event] = fingerprint
+    _last_event_repeat_counts[event] = 1
+
+    if suppressed_count:
+        details = {
+            **details,
+            "same_result_repeated": suppressed_count,
+            "observations_since_previous_change": suppressed_count + 1,
+        }
+
     metadata = _new_message_metadata("EXT")
     write_jsonl(
         {
@@ -142,8 +170,9 @@ def inspect_target_exit() -> None:
         history = manager.getHistoricalProcessExitReasons(TARGET, 0, 10)
         if not history:
             write_event(
-                "target_exit_poll_empty",
+                "target_exit_state",
                 target_package=TARGET,
+                state="no_exit_history",
             )
             return
 
@@ -172,8 +201,9 @@ def inspect_target_exit() -> None:
             18: "ANOMALY",
         }
         write_event(
-            "target_exit_poll",
+            "target_exit_state",
             target_package=TARGET,
+            state="exit_history_available",
             history_count=len(history),
             latest_timestamp_ms=timestamp,
             latest_reason=reason,
