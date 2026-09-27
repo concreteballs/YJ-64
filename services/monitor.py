@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import os
 import socket
@@ -35,10 +33,6 @@ _last_process_state = None
 
 _event_sequence = 0
 _last_command_id = None
-
-# Suppress identical observations while retaining a count of suppressed polls.
-_last_event_fingerprints: dict[str, str] = {}
-_last_event_repeat_counts: dict[str, int] = {}
 
 
 def _new_message_metadata(prefix: str) -> dict[str, Any]:
@@ -127,31 +121,7 @@ def write_jsonl(payload: dict[str, Any]) -> None:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
-def _event_fingerprint(details: dict[str, Any]) -> str:
-    return json.dumps(details, sort_keys=True, separators=(",", ":"), default=str)
-
-
 def write_event(event: str, **details: Any) -> None:
-    fingerprint = _event_fingerprint(details)
-    previous_fingerprint = _last_event_fingerprints.get(event)
-
-    if previous_fingerprint == fingerprint:
-        _last_event_repeat_counts[event] = (
-            _last_event_repeat_counts.get(event, 1) + 1
-        )
-        return
-
-    suppressed_count = _last_event_repeat_counts.get(event, 0)
-    _last_event_fingerprints[event] = fingerprint
-    _last_event_repeat_counts[event] = 1
-
-    if suppressed_count:
-        details = {
-            **details,
-            "same_result_repeated": suppressed_count,
-            "observations_since_previous_change": suppressed_count + 1,
-        }
-
     metadata = _new_message_metadata("EXT")
     write_jsonl(
         {
@@ -172,9 +142,8 @@ def inspect_target_exit() -> None:
         history = manager.getHistoricalProcessExitReasons(TARGET, 0, 10)
         if not history:
             write_event(
-                "target_exit_state",
+                "target_exit_poll_empty",
                 target_package=TARGET,
-                state="no_exit_history",
             )
             return
 
@@ -203,9 +172,8 @@ def inspect_target_exit() -> None:
             18: "ANOMALY",
         }
         write_event(
-            "target_exit_state",
+            "target_exit_poll",
             target_package=TARGET,
-            state="exit_history_available",
             history_count=len(history),
             latest_timestamp_ms=timestamp,
             latest_reason=reason,
@@ -256,17 +224,6 @@ def inspect_target_exit() -> None:
         )
 
 
-
-def verify_internal_signature(report: dict[str, Any]) -> bool:
-    signature = report.get("signature")
-    algorithm = report.get("signature_algorithm")
-    if not isinstance(signature, str) or algorithm != "HMAC-SHA256":
-        return False
-    unsigned = {key: value for key, value in report.items() if key not in {"signature", "signature_algorithm"}}
-    canonical = json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    expected = hmac.new(BRIDGE_TOKEN.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(signature, expected)
-
 def handle_bridge_connection(connection: socket.socket) -> None:
     global _last_command_id
     try:
@@ -287,19 +244,6 @@ def handle_bridge_connection(connection: socket.socket) -> None:
             connection.sendall(b'{"ok":false,"error":"unsupported_schema"}\n')
             return
 
-        signature_valid = verify_internal_signature(report)
-        write_event(
-            "internal_report_signature_verification",
-            report_message_id=report.get("message_id"),
-            report_id=report.get("report_id"),
-            signature=report.get("signature"),
-            signature_algorithm=report.get("signature_algorithm"),
-            signature_valid=signature_valid,
-        )
-        if not signature_valid:
-            connection.sendall(b'{"ok":false,"error":"invalid_report_signature"}\n')
-            return
-
         received_meta = _new_message_metadata("EXT-RECV")
         write_jsonl(
             {
@@ -311,18 +255,6 @@ def handle_bridge_connection(connection: socket.socket) -> None:
                 "report": report,
             }
         )
-
-        if report.get("event") == "target_planned_crash_recovered":
-            write_event(
-                "internal_report_received",
-                report_type="target_planned_crash_recovered",
-                report_message_id=report.get("message_id"),
-                report_id=report.get("report_id"),
-                signature=report.get("signature"),
-                signature_algorithm=report.get("signature_algorithm"),
-                signature_valid=True,
-                original_report=report,
-            )
 
         if report.get("event") == "diagnostic_test_result":
             data = report.get("data") or {}
