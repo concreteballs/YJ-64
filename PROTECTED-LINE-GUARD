@@ -9825,3 +9825,290 @@ else:
 
 --- END PROPOSED CONTENT ---
 --- END OPERATION ---
+
+
+FILE: .github/workflows/android-apk.yml
+--- BEGIN ALLOWED ---
+name: YJ-64 Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'PROTECTED-LINE-GUARD'
+      - 'services/monitor.py'
+      - '.github/workflows/android-apk.yml'
+
+concurrency:
+  group: yj64-android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build YJ-64 Monitor APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard verification
+        env:
+          GUARD_BASE_REF: HEAD^1
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -o pipefail
+          python tools/verify_protected_guard.py 2>&1 | tee guard-diagnostics.txt
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git zip unzip imagemagick autoconf automake libtool libltdl-dev pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
+            cmake libffi-dev libssl-dev build-essential gettext autopoint
+
+      - name: Install Buildozer and Cython
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install buildozer cython==0.29.36
+
+      - name: Generate monitor icon
+        run: |
+          cat > icon.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+            <rect width="512" height="512" fill="none"/>
+            <circle cx="256" cy="256" r="226" fill="#000000" stroke="#FFFFFF" stroke-width="28"/>
+          </svg>
+          EOF
+          convert -background none icon.svg -resize 512x512 icon.png
+          file icon.png
+
+      - name: Validate Python sources
+        run: |
+          python -m py_compile main.py
+          python -m py_compile src/yj64/*.py
+          python -m py_compile services/monitor.py
+
+      - name: Run tests
+        run: |
+          python -m pip install pytest
+          PYTHONPATH=src python -m unittest discover -s tests -v
+
+      - name: Clean previous Android build artifacts and logs
+        run: |
+          rm -rf bin .buildozer
+          rm -f build.log buildozer.log
+          mkdir -p bin
+
+      - name: Build APK
+        run: |
+          export ACLOCAL_PATH="/usr/share/aclocal"
+          set -o pipefail
+          buildozer -v android debug 2>&1 | tee build.log
+
+      - name: Validate APK output
+        run: |
+          set -e
+          APK=$(find bin -maxdepth 1 -type f -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: no APK was produced"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$APK")
+          echo "APK: $APK ($SIZE bytes)"
+          sha256sum "$APK"
+
+      - name: Upload Guard diagnostic
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-guard-diagnostic
+          path: guard-diagnostics.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload Build log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-build-log
+          path: build.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload APK
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-monitor-apk
+          path: bin/*.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+--- END ALLOWED ---
+
+--- BEGIN OPERATION ---
+FILE: .github/workflows/android-apk.yml
+STATUS: APPROVED — BUILD ON MONITOR UI SOURCE CHANGE
+NAME: build-on-main-py-change
+PURPOSE: authorize the exact workflow update so changes to main.py automatically trigger the Android APK build.
+--- BEGIN PROPOSED CONTENT ---
+name: YJ-64 Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'PROTECTED-LINE-GUARD'
+      - 'services/monitor.py'
+      - 'main.py'
+      - '.github/workflows/android-apk.yml'
+
+concurrency:
+  group: yj64-android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build YJ-64 Monitor APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard verification
+        env:
+          GUARD_BASE_REF: HEAD^1
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -o pipefail
+          python tools/verify_protected_guard.py 2>&1 | tee guard-diagnostics.txt
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git zip unzip imagemagick autoconf automake libtool libltdl-dev pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
+            cmake libffi-dev libssl-dev build-essential gettext autopoint
+
+      - name: Install Buildozer and Cython
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install buildozer cython==0.29.36
+
+      - name: Generate monitor icon
+        run: |
+          cat > icon.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+            <rect width="512" height="512" fill="none"/>
+            <circle cx="256" cy="256" r="226" fill="#000000" stroke="#FFFFFF" stroke-width="28"/>
+          </svg>
+          EOF
+          convert -background none icon.svg -resize 512x512 icon.png
+          file icon.png
+
+      - name: Validate Python sources
+        run: |
+          python -m py_compile main.py
+          python -m py_compile src/yj64/*.py
+          python -m py_compile services/monitor.py
+
+      - name: Run tests
+        run: |
+          python -m pip install pytest
+          PYTHONPATH=src python -m unittest discover -s tests -v
+
+      - name: Clean previous Android build artifacts and logs
+        run: |
+          rm -rf bin .buildozer
+          rm -f build.log buildozer.log
+          mkdir -p bin
+
+      - name: Build APK
+        run: |
+          export ACLOCAL_PATH="/usr/share/aclocal"
+          set -o pipefail
+          buildozer -v android debug 2>&1 | tee build.log
+
+      - name: Validate APK output
+        run: |
+          set -e
+          APK=$(find bin -maxdepth 1 -type f -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: no APK was produced"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$APK")
+          echo "APK: $APK ($SIZE bytes)"
+          sha256sum "$APK"
+
+      - name: Upload Guard diagnostic
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-guard-diagnostic
+          path: guard-diagnostics.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload Build log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-build-log
+          path: build.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload APK
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: yj64-monitor-apk
+          path: bin/*.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+--- END PROPOSED CONTENT ---
+--- END OPERATION ---
