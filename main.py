@@ -555,7 +555,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
 
         def show_service_log(self, *_):
             """Show the exact service-log path and distinguish missing/empty/readable states."""
-            service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+            service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
             self._showing_service_log = True
             path_text = str(service_report)
             self.status.text = f"Service log path: {path_text}"
