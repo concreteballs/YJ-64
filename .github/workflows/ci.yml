@@ -22,6 +22,8 @@ jobs:
 
       - name: Guard diagnostic
         id: guard
+        env:
+          GUARD_BASE_REF: HEAD^1
         run: |
           set +e
           python tools/verify_protected_guard.py > guard-diagnostics.txt 2>&1
