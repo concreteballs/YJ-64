@@ -1,10 +1,13 @@
 name: YJ-64 Android APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
       - 'PROTECTED-LINE-GUARD'
+      - 'services/monitor.py'
+      - '.github/workflows/android-apk.yml'
 
 concurrency:
   group: yj64-android-build-${{ github.ref }}
