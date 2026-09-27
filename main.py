@@ -164,13 +164,13 @@ if os.environ.get("ANDROID_ARGUMENT"):
             copy_button.bind(on_release=self.copy_report)
             root.add_widget(copy_button)
 
-            clear_selection_button = Button(
-                text="Сбросить выделение",
+            clear_report_button = Button(
+                text="Сбросить предыдущий отчёт",
                 size_hint_y=None,
                 height=60,
             )
-            clear_selection_button.bind(on_release=self.clear_selection)
-            root.add_widget(clear_selection_button)
+            clear_report_button.bind(on_release=self.clear_report)
+            root.add_widget(clear_report_button)
 
             stop_button = Button(
                 text="Остановить монитор",
@@ -601,12 +601,19 @@ if os.environ.get("ANDROID_ARGUMENT"):
             except OSError as exc:
                 self.status.text = f"Копирование не удалось: {type(exc).__name__}: {exc}"
 
-        def clear_selection(self, *_):
+        def clear_report(self, *_):
+            report = Path(self.user_data_dir) / "yj64-monitor.jsonl"
             try:
-                self.report_view.cancel_selection()
-            except Exception:
-                pass
-            self.status.text = "Выделение сброшено."
+                report.write_text("", encoding="utf-8")
+                self._showing_service_log = False
+                self.report_view.text = (
+                    "Предыдущий отчёт сброшен. Ожидание новых событий..."
+                )
+                self.status.text = "Предыдущий отчёт очищен."
+            except OSError as exc:
+                self.status.text = (
+                    f"Не удалось сбросить отчёт: {type(exc).__name__}: {exc}"
+                )
 
         def refresh(self, *_):
             if not getattr(self, "_monitor_active", True):
