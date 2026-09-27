@@ -927,7 +927,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
 
         def show_service_log(self, *_):
             """Show the exact service-log path and distinguish missing/empty/readable states."""
-            service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+            service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
             self._showing_service_log = True
             path_text = str(service_report)
             self.status.text = f"Service log path: {path_text}"
@@ -4847,7 +4847,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
         def show_service_log(self, *_):
             """Load the foreground-service diagnostic log into the UI."""
             try:
-                service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+                service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
                 self._showing_service_log = True
                 if not service_report.exists():
                     self.report_view.text = "Service log пока не создан."
@@ -5584,7 +5584,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
         def show_service_log(self, *_):
             """Load the foreground-service diagnostic log into the UI."""
             try:
-                service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+                service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
                 self._showing_service_log = True
                 if not service_report.exists():
                     self.report_view.text = "Service log пока не создан."
@@ -6530,7 +6530,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
         def show_service_log(self, *_):
             """Load the foreground-service diagnostic log into the UI."""
             try:
-                service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+                service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
                 self._showing_service_log = True
                 if not service_report.exists():
                     self.report_view.text = "Service log пока не создан."
@@ -7171,7 +7171,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
         def show_service_log(self, *_):
             """Load the foreground-service diagnostic log into the UI."""
             try:
-                service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+                service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
                 self._showing_service_log = True
                 if not service_report.exists():
                     self.report_view.text = "Service log пока не создан."
@@ -9099,7 +9099,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
         def show_service_log(self, *_):
             """Load the foreground-service diagnostic log into the UI."""
             try:
-                service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+                service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
                 self._showing_service_log = True
                 if not service_report.exists():
                     self.report_view.text = "Service log пока не создан."
@@ -9746,7 +9746,7 @@ if os.environ.get("ANDROID_ARGUMENT"):
 
         def show_service_log(self, *_):
             """Show the exact service-log path and distinguish missing/empty/readable states."""
-            service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+            service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
             self._showing_service_log = True
             path_text = str(service_report)
             self.status.text = f"Service log path: {path_text}"
