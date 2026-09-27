@@ -554,27 +554,82 @@ if os.environ.get("ANDROID_ARGUMENT"):
             )
 
         def show_service_log(self, *_):
-            """Load the foreground-service diagnostic log into the UI."""
+            """Show the exact service-log path and distinguish missing/empty/readable states."""
+            service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
+            self._showing_service_log = True
+            path_text = str(service_report)
+            self.status.text = f"Service log path: {path_text}"
+
             try:
-                service_report = Path(self.user_data_dir) / "yj64-service-monitor.jsonl"
-                self._showing_service_log = True
                 if not service_report.exists():
-                    self.report_view.text = "Service log пока не создан."
-                    self.status.text = "Service log отсутствует."
+                    self.report_view.text = (
+                        "SERVICE LOG: ФАЙЛ НЕ НАЙДЕН\n"
+                        f"Искомый путь:\n{path_text}\n\n"
+                        "Причина: файл по этому пути отсутствует.\n"
+                        "Сервисный лог не сформирован по этому пути."
+                    )
+                    self.status.text = (
+                        "Service log: файл не найден по пути: "
+                        f"{path_text}"
+                    )
                     return
-                lines = [
-                    line
-                    for line in service_report.read_text(encoding="utf-8").splitlines()
-                    if line.strip()
-                ]
+
+                if not service_report.is_file():
+                    self.report_view.text = (
+                        "SERVICE LOG: ПУТЬ СУЩЕСТВУЕТ, НО ЭТО НЕ ФАЙЛ\n"
+                        f"Искомый путь:\n{path_text}\n\n"
+                        "Причина: указанный путь существует, но не является обычным файлом."
+                    )
+                    self.status.text = (
+                        "Service log: путь существует, но это не файл: "
+                        f"{path_text}"
+                    )
+                    return
+
+                try:
+                    lines = [
+                        line
+                        for line in service_report.read_text(encoding="utf-8").splitlines()
+                        if line.strip()
+                    ]
+                except UnicodeError as exc:
+                    self.report_view.text = (
+                        "SERVICE LOG: ФАЙЛ НАЙДЕН, НО НЕ ПРОЧИТАН\n"
+                        f"Путь:\n{path_text}\n\n"
+                        f"Причина: ошибка декодирования {type(exc).__name__}: {exc}"
+                    )
+                    self.status.text = (
+                        "Service log: файл найден, но не прочитан: "
+                        f"{type(exc).__name__}"
+                    )
+                    return
+
+                if not lines:
+                    self.report_view.text = (
+                        "SERVICE LOG: ФАЙЛ НАЙДЕН, НО ПУСТ\n"
+                        f"Путь:\n{path_text}\n\n"
+                        "Причина: файл существует, но в нём нет событий."
+                    )
+                    self.status.text = (
+                        "Service log: файл найден, но пуст: "
+                        f"{path_text}"
+                    )
+                    return
+
                 self.report_view.text = "\n".join(lines[-200:])
                 self.status.text = (
-                    "Показан service log: {} событий."
-                    .format(len(lines))
+                    "Service log: файл найден и прочитан. "
+                    f"Путь: {path_text}. Событий: {len(lines)}."
                 )
             except OSError as exc:
+                self.report_view.text = (
+                    "SERVICE LOG: ОШИБКА ДОСТУПА\n"
+                    f"Путь:\n{path_text}\n\n"
+                    f"Причина: {type(exc).__name__}: {exc}"
+                )
                 self.status.text = (
-                    f"Не удалось прочитать service log: {type(exc).__name__}: {exc}"
+                    "Service log: ошибка доступа по пути "
+                    f"{path_text}: {type(exc).__name__}: {exc}"
                 )
 
         def stop_monitor(self, *_):
