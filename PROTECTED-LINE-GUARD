@@ -1016,6 +1016,8 @@ import os
 import socket
 import threading
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1028,6 +1030,8 @@ BRIDGE_PORT = int(os.environ.get("YJ64_BRIDGE_PORT", "9333"))
 BRIDGE_TOKEN = os.environ.get("YJ64_BRIDGE_TOKEN", "yj64-dev-bridge-v1")
 BRIDGE_SCHEMA = "yj64.diagnostic.v1"
 
+# Guard-authorized diagnostic bridge baseline.
+
 PythonService = autoclass("org.kivy.android.PythonService")
 service = PythonService.mService
 service.setAutoRestartService(True)
@@ -1035,6 +1039,20 @@ service.setAutoRestartService(True)
 # Ignore historical exits that happened before this monitor instance started.
 _last_exit_key = None
 _last_process_state = None
+
+_event_sequence = 0
+_last_command_id = None
+
+
+def _new_message_metadata(prefix: str) -> dict[str, Any]:
+    global _event_sequence
+    _event_sequence += 1
+    return {
+        "message_id": f"{prefix}-{uuid.uuid4().hex}",
+        "sequence": _event_sequence,
+        "wall_time": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+        "monotonic_ns": time.monotonic_ns(),
+    }
 
 
 def _latest_exit_key() -> tuple[int, int] | None:
@@ -1113,11 +1131,13 @@ def write_jsonl(payload: dict[str, Any]) -> None:
 
 
 def write_event(event: str, **details: Any) -> None:
+    metadata = _new_message_metadata("EXT")
     write_jsonl(
         {
             "source": "external_monitor",
             "event": event,
             "timestamp_ms": int(time.time() * 1000),
+            **metadata,
             **details,
         }
     )
@@ -1214,8 +1234,11 @@ def inspect_target_exit() -> None:
 
 
 def handle_bridge_connection(connection: socket.socket) -> None:
+    global _last_command_id
     try:
         connection.settimeout(2.0)
+        received_wall_time = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        received_monotonic_ns = time.monotonic_ns()
         raw = connection.recv(65536).decode("utf-8", errors="replace").strip()
         envelope = json.loads(raw)
         if envelope.get("token") != BRIDGE_TOKEN:
@@ -1230,19 +1253,70 @@ def handle_bridge_connection(connection: socket.socket) -> None:
             connection.sendall(b'{"ok":false,"error":"unsupported_schema"}\n')
             return
 
+        received_meta = _new_message_metadata("EXT-RECV")
         write_jsonl(
             {
                 "source": "internal_diagnostic_agent",
                 "bridge_received": True,
-                "received_at_ms": int(time.time() * 1000),
+                "received_at_wall_time": received_wall_time,
+                "received_at_monotonic_ns": received_monotonic_ns,
+                **received_meta,
                 "report": report,
             }
         )
+
+        if report.get("event") == "diagnostic_test_result":
+            data = report.get("data") or {}
+            received_command_id = data.get("command_id")
+            write_event(
+                "diagnostic_test_verification",
+                expected_command_id=_last_command_id,
+                received_command_id=received_command_id,
+                match=bool(
+                    _last_command_id
+                    and received_command_id == _last_command_id
+                ),
+                report_message_id=report.get("message_id"),
+                report_wall_time=report.get("wall_time"),
+                received_at_wall_time=received_wall_time,
+            )
+
+        ack_meta = _new_message_metadata("EXT-ACK")
         ack = {
             "ok": True,
             "report_id": report.get("report_id"),
+            "ack_message_id": ack_meta["message_id"],
+            "ack_sequence": ack_meta["sequence"],
+            "ack_wall_time": ack_meta["wall_time"],
+            "ack_monotonic_ns": ack_meta["monotonic_ns"],
+            "received_at_wall_time": received_wall_time,
+            "received_at_monotonic_ns": received_monotonic_ns,
         }
-        connection.sendall((json.dumps(ack) + "\n").encode("utf-8"))
+
+        if (
+            os.environ.get("YJ64_AUTO_DIAGNOSTIC_TEST", "1") == "1"
+            and report.get("event") == "target_launch_result"
+        ):
+            command_meta = _new_message_metadata("EXT-CMD")
+            _last_command_id = command_meta["message_id"]
+            ack["command"] = {
+                "command": "RUN_DIAGNOSTIC_TEST",
+                **command_meta,
+                "issued_after_report_id": report.get("report_id"),
+                "issued_at_wall_time": command_meta["wall_time"],
+                "issued_at_monotonic_ns": command_meta["monotonic_ns"],
+                "ack_wall_time": ack_meta["wall_time"],
+                "ack_monotonic_ns": ack_meta["monotonic_ns"],
+            }
+
+        connection.sendall((json.dumps(ack, sort_keys=True) + "\n").encode("utf-8"))
+        write_event(
+            "bridge_command_response",
+            reply_to=report.get("report_id"),
+            command=ack.get("command"),
+            report_received_at_wall_time=received_wall_time,
+            report_received_at_monotonic_ns=received_monotonic_ns,
+        )
     except (OSError, ValueError, TypeError):
         try:
             connection.sendall(b'{"ok":false,"error":"malformed_message"}\n')
@@ -1253,7 +1327,6 @@ def handle_bridge_connection(connection: socket.socket) -> None:
             connection.close()
         except OSError:
             pass
-
 
 def bridge_server() -> None:
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
