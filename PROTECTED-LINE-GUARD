@@ -926,13 +926,16 @@ if os.environ.get("ANDROID_ARGUMENT"):
             )
 
         def show_service_log(self, *_):
-            """Show the exact service-log path and distinguish missing/empty/readable states."""
-            service_report = Path(str(autoclass("org.kivy.android.PythonService").mService.getFilesDir())) / "yj64-monitor.jsonl"
+            """Show the foreground service log from the service's actual files directory."""
             self._showing_service_log = True
-            path_text = str(service_report)
-            self.status.text = f"Service log path: {path_text}"
-
             try:
+                service = autoclass("org.kivy.android.PythonService").mService
+                if service is None:
+                    raise RuntimeError("PythonService.mService is unavailable")
+                service_report = Path(str(service.getFilesDir())) / "yj64-monitor.jsonl"
+                path_text = str(service_report)
+                self.status.text = f"Service log path: {path_text}"
+
                 if not service_report.exists():
                     self.report_view.text = (
                         "SERVICE LOG: ФАЙЛ НЕ НАЙДЕН\n"
@@ -958,24 +961,11 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     )
                     return
 
-                try:
-                    lines = [
-                        line
-                        for line in service_report.read_text(encoding="utf-8").splitlines()
-                        if line.strip()
-                    ]
-                except UnicodeError as exc:
-                    self.report_view.text = (
-                        "SERVICE LOG: ФАЙЛ НАЙДЕН, НО НЕ ПРОЧИТАН\n"
-                        f"Путь:\n{path_text}\n\n"
-                        f"Причина: ошибка декодирования {type(exc).__name__}: {exc}"
-                    )
-                    self.status.text = (
-                        "Service log: файл найден, но не прочитан: "
-                        f"{type(exc).__name__}"
-                    )
-                    return
-
+                lines = [
+                    line
+                    for line in service_report.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
                 if not lines:
                     self.report_view.text = (
                         "SERVICE LOG: ФАЙЛ НАЙДЕН, НО ПУСТ\n"
@@ -993,15 +983,16 @@ if os.environ.get("ANDROID_ARGUMENT"):
                     "Service log: файл найден и прочитан. "
                     f"Путь: {path_text}. Событий: {len(lines)}."
                 )
-            except OSError as exc:
+            except Exception as exc:
+                path_text = locals().get("path_text", "не удалось определить: сервис недоступен")
                 self.report_view.text = (
-                    "SERVICE LOG: ОШИБКА ДОСТУПА\n"
-                    f"Путь:\n{path_text}\n\n"
+                    "SERVICE LOG: НЕ УДАЛОСЬ ПОЛУЧИТЬ ЛОГ\n"
+                    f"Искомый путь:\n{path_text}\n\n"
                     f"Причина: {type(exc).__name__}: {exc}"
                 )
                 self.status.text = (
-                    "Service log: ошибка доступа по пути "
-                    f"{path_text}: {type(exc).__name__}: {exc}"
+                    "Service log: ошибка чтения: "
+                    f"{type(exc).__name__}: {exc}"
                 )
 
         def stop_monitor(self, *_):
