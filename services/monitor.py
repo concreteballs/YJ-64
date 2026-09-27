@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import socket
@@ -254,6 +256,17 @@ def inspect_target_exit() -> None:
         )
 
 
+
+def verify_internal_signature(report: dict[str, Any]) -> bool:
+    signature = report.get("signature")
+    algorithm = report.get("signature_algorithm")
+    if not isinstance(signature, str) or algorithm != "HMAC-SHA256":
+        return False
+    unsigned = {key: value for key, value in report.items() if key not in {"signature", "signature_algorithm"}}
+    canonical = json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    expected = hmac.new(BRIDGE_TOKEN.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
 def handle_bridge_connection(connection: socket.socket) -> None:
     global _last_command_id
     try:
@@ -274,6 +287,19 @@ def handle_bridge_connection(connection: socket.socket) -> None:
             connection.sendall(b'{"ok":false,"error":"unsupported_schema"}\n')
             return
 
+        signature_valid = verify_internal_signature(report)
+        write_event(
+            "internal_report_signature_verification",
+            report_message_id=report.get("message_id"),
+            report_id=report.get("report_id"),
+            signature=report.get("signature"),
+            signature_algorithm=report.get("signature_algorithm"),
+            signature_valid=signature_valid,
+        )
+        if not signature_valid:
+            connection.sendall(b'{"ok":false,"error":"invalid_report_signature"}\n')
+            return
+
         received_meta = _new_message_metadata("EXT-RECV")
         write_jsonl(
             {
@@ -285,6 +311,18 @@ def handle_bridge_connection(connection: socket.socket) -> None:
                 "report": report,
             }
         )
+
+        if report.get("event") == "target_planned_crash_recovered":
+            write_event(
+                "internal_report_received",
+                report_type="target_planned_crash_recovered",
+                report_message_id=report.get("message_id"),
+                report_id=report.get("report_id"),
+                signature=report.get("signature"),
+                signature_algorithm=report.get("signature_algorithm"),
+                signature_valid=True,
+                original_report=report,
+            )
 
         if report.get("event") == "diagnostic_test_result":
             data = report.get("data") or {}
