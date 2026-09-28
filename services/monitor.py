@@ -261,10 +261,20 @@ def handle_bridge_connection(connection: socket.socket) -> None:
         connection.settimeout(2.0)
         received_wall_time = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         received_monotonic_ns = time.monotonic_ns()
-        raw = connection.recv(65536).decode("utf-8", errors="replace").strip()
+        raw = connection.recv(262144).decode("utf-8", errors="replace").strip()
         envelope = json.loads(raw)
         if envelope.get("token") != BRIDGE_TOKEN:
             connection.sendall(b'{"ok":false,"error":"invalid_token"}\n')
+            return
+
+        if envelope.get("ui_request") == "GET_BASE_SERVICE_LOG":
+            try:
+                report = request_base_service_log()
+                write_event("base_service_log_relayed", report_id=report.get("report_id"), report_message_id=report.get("message_id"), signature_valid=True)
+                connection.sendall((json.dumps({"ok":True,"report":report},sort_keys=True)+"\n").encode("utf-8"))
+            except Exception as exc:
+                write_event("base_service_log_relay_failed", error_type=type(exc).__name__, error=str(exc))
+                connection.sendall((json.dumps({"ok":False,"error":f"{type(exc).__name__}: {exc}"},sort_keys=True)+"\n").encode("utf-8"))
             return
 
         report = envelope.get("report")
