@@ -26,6 +26,9 @@ TARGET_LABEL = "YJ-64 Fault Injection"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 9333
 BRIDGE_TOKEN = "yj64-dev-bridge-v1"
+BRIDGE_HOST = "127.0.0.1"
+BRIDGE_PORT = 9333
+BRIDGE_TOKEN = "yj64-dev-bridge-v1"
 
 
 async def _packets() -> Any:
