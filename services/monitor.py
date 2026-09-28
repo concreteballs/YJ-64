@@ -239,6 +239,22 @@ def verify_internal_signature(report: dict[str, Any]) -> bool:
     expected = hmac.new(BRIDGE_TOKEN.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature, expected)
 
+def request_base_service_log() -> dict[str, Any]:
+    command_meta = _new_message_metadata("EXT-BASE")
+    envelope = {"token": BRIDGE_TOKEN, "command": {"command": "GET_SERVICE_LOG", **command_meta}}
+    with socket.create_connection((BASE_COMMAND_HOST, BASE_COMMAND_PORT), timeout=5.0) as connection:
+        connection.sendall((json.dumps(envelope, sort_keys=True) + "\n").encode("utf-8"))
+        connection.settimeout(5.0)
+        raw = connection.recv(262144).decode("utf-8", errors="replace").strip()
+    if not raw: raise RuntimeError("Base returned an empty service-log response")
+    response=json.loads(raw)
+    if response.get("ok") is not True: raise RuntimeError(f"Base service-log request failed: {response.get('error','unknown_error')}")
+    report=response.get("report")
+    if not isinstance(report,dict): raise RuntimeError("Base response does not contain a report")
+    if not verify_internal_signature(report): raise RuntimeError("Base service-log report has an invalid HMAC signature")
+    return report
+
+
 def handle_bridge_connection(connection: socket.socket) -> None:
     global _last_command_id
     try:
