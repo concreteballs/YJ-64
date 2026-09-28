@@ -22,6 +22,8 @@ BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = int(os.environ.get("YJ64_BRIDGE_PORT", "9333"))
 BRIDGE_TOKEN = os.environ.get("YJ64_BRIDGE_TOKEN", "yj64-dev-bridge-v1")
 BRIDGE_SCHEMA = "yj64.diagnostic.v1"
+BASE_COMMAND_HOST = "127.0.0.1"
+BASE_COMMAND_PORT = int(os.environ.get("YJ64_BASE_COMMAND_PORT", "9334"))
 
 # Guard-authorized diagnostic bridge baseline.
 
