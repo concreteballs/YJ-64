@@ -23,6 +23,9 @@ from yj64.config import load_config
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 TARGET_PACKAGE = "org.blackmirror.blackmirror"
 TARGET_LABEL = "YJ-64 Fault Injection"
+BRIDGE_HOST = "127.0.0.1"
+BRIDGE_PORT = 9333
+BRIDGE_TOKEN = "yj64-dev-bridge-v1"
 
 
 async def _packets() -> Any:
@@ -554,74 +557,42 @@ if os.environ.get("ANDROID_ARGUMENT"):
             )
 
         def show_service_log(self, *_):
-            """Show the foreground service log from the service's actual files directory."""
+            """Request the Base application's service log through the diagnostic bridge."""
             self._showing_service_log = True
+            command_id = f"UI-{time.monotonic_ns()}"
+            self.status.text = "Запрашиваю service log Base..."
             try:
-                service = autoclass("org.kivy.android.PythonService").mService
-                if service is None:
-                    raise RuntimeError("PythonService.mService is unavailable")
-                service_report = Path(str(service.getFilesDir())) / "yj64-monitor.jsonl"
-                path_text = str(service_report)
-                self.status.text = f"Service log path: {path_text}"
-
-                if not service_report.exists():
-                    self.report_view.text = (
-                        "SERVICE LOG: ФАЙЛ НЕ НАЙДЕН\n"
-                        f"Искомый путь:\n{path_text}\n\n"
-                        "Причина: файл по этому пути отсутствует.\n"
-                        "Сервисный лог не сформирован по этому пути."
-                    )
-                    self.status.text = (
-                        "Service log: файл не найден по пути: "
-                        f"{path_text}"
-                    )
-                    return
-
-                if not service_report.is_file():
-                    self.report_view.text = (
-                        "SERVICE LOG: ПУТЬ СУЩЕСТВУЕТ, НО ЭТО НЕ ФАЙЛ\n"
-                        f"Искомый путь:\n{path_text}\n\n"
-                        "Причина: указанный путь существует, но не является обычным файлом."
-                    )
-                    self.status.text = (
-                        "Service log: путь существует, но это не файл: "
-                        f"{path_text}"
-                    )
-                    return
-
-                lines = [
-                    line
-                    for line in service_report.read_text(encoding="utf-8").splitlines()
-                    if line.strip()
-                ]
-                if not lines:
-                    self.report_view.text = (
-                        "SERVICE LOG: ФАЙЛ НАЙДЕН, НО ПУСТ\n"
-                        f"Путь:\n{path_text}\n\n"
-                        "Причина: файл существует, но в нём нет событий."
-                    )
-                    self.status.text = (
-                        "Service log: файл найден, но пуст: "
-                        f"{path_text}"
-                    )
-                    return
-
-                self.report_view.text = "\n".join(lines[-200:])
-                self.status.text = (
-                    "Service log: файл найден и прочитан. "
-                    f"Путь: {path_text}. Событий: {len(lines)}."
-                )
+                payload = {"token": BRIDGE_TOKEN, "ui_request": "GET_BASE_SERVICE_LOG", "message_id": command_id}
+                with socket.create_connection((BRIDGE_HOST, BRIDGE_PORT), timeout=5.0) as connection:
+                    connection.sendall((json.dumps(payload, sort_keys=True) + "\n").encode("utf-8"))
+                    connection.settimeout(5.0)
+                    raw = connection.recv(262144).decode("utf-8", errors="replace").strip()
+                if not raw: raise RuntimeError("monitor service returned an empty response")
+                response = json.loads(raw)
+                if response.get("ok") is not True: raise RuntimeError(f"bridge request failed: {response.get('error', 'unknown_error')}")
+                report = response.get("report")
+                if not isinstance(report, dict): raise RuntimeError("bridge response does not contain a report")
+                data = report.get("data")
+                if not isinstance(data, dict): raise RuntimeError("Base response does not contain report data")
+                lines = data.get("primary_log_lines", [])
+                path_text = str(data.get("primary_log_path", "не определён"))
+                line_count = int(data.get("primary_log_line_count", 0))
+                truncated = bool(data.get("primary_log_truncated", False))
+                fault_report = data.get("fault_report")
+                if not data.get("primary_log_exists"):
+                    text = "BASE SERVICE LOG: ФАЙЛ НЕ НАЙДЕН\nПуть, который проверил Base:\n" + path_text
+                elif not lines:
+                    text = "BASE SERVICE LOG: ФАЙЛ НАЙДЕН, НО ПУСТ\nПуть:\n" + path_text + f"\nСтрок в файле: {line_count}"
+                else:
+                    text = "BASE SERVICE LOG\nИсточник: " + path_text + f"\nСтрок в файле: {line_count}" + ("\nПоказана последняя часть файла." if truncated else "") + "\n\n" + "\n".join(str(line) for line in lines)
+                if fault_report is not None:
+                    text += "\n\n===== PERSISTED FAULT REPORT =====\n" + json.dumps(fault_report, indent=2, sort_keys=True, ensure_ascii=False)
+                self.report_view.text = text
+                self.status.text = "Service log Base получен через bridge."
+                self._append_local_report({"source":"monitor_ui","event":"base_service_log_received","command_id":command_id,"report_id":report.get("report_id"),"primary_log_path":path_text,"primary_log_line_count":line_count,"primary_log_truncated":truncated})
             except Exception as exc:
-                path_text = locals().get("path_text", "не удалось определить: сервис недоступен")
-                self.report_view.text = (
-                    "SERVICE LOG: НЕ УДАЛОСЬ ПОЛУЧИТЬ ЛОГ\n"
-                    f"Искомый путь:\n{path_text}\n\n"
-                    f"Причина: {type(exc).__name__}: {exc}"
-                )
-                self.status.text = (
-                    "Service log: ошибка чтения: "
-                    f"{type(exc).__name__}: {exc}"
-                )
+                self.report_view.text = "BASE SERVICE LOG: НЕ УДАЛОСЬ ПОЛУЧИТЬ\n\n" + f"Причина: {type(exc).__name__}: {exc}"
+                self.status.text = "Service log Base: ошибка запроса: " + f"{type(exc).__name__}: {exc}"
 
         def stop_monitor(self, *_):
             try:
